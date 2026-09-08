@@ -16,6 +16,16 @@ CRITICAL = [
     "会津中央病院",
     "福島県立医科大学附属病院",
 ]
+HOSPITAL_PHONE_OVERRIDES = {
+    "公立小野町地方綜合病院":"0247-72-3181",
+    "医療法人社団青秀会　車田病院":"0247-43-1019",
+    "医療法人社団養高会　高野病院":"0240-27-2901",
+    "（医）社団石福会四倉病院":"0246-32-5321",
+    "（医）泉心会泉保養院":"0246-56-6611",
+    "社団（医）養生会かしま病院":"0246-58-8010",
+    "福島県ふたば医療センター附属病院":"0240-23-5090",
+}
+
 DISASTER = [
     "福島県立医科大学附属病院",
     "福島赤十字病院",
@@ -329,10 +339,23 @@ def parse_hospital_pdf_phones(hospitals):
             match_modes[mode]=match_modes.get(mode,0)+1
         else:
             unmatched.append(h["name"])
+    # Explicitly verified official-site overrides for facilities whose
+    # prefectural PDF formatting prevents reliable machine matching.
+    still_unmatched=[]
+    for h in hospitals:
+        if not h.get("phone"):
+            p=HOSPITAL_PHONE_OVERRIDES.get(h["name"])
+            if p:
+                h["phone"]=p
+                h["phone_source"]="公式病院・自治体サイト確認"
+                matched.append(h["name"])
+                match_modes["official_override"]=match_modes.get("official_override",0)+1
+            else:
+                still_unmatched.append(h["name"])
     return {
         "pages":len(pages),
-        "matched_hospitals":len(matched),
-        "unmatched_hospitals":unmatched,
+        "matched_hospitals":sum(1 for h in hospitals if h.get("phone")),
+        "unmatched_hospitals":still_unmatched,
         "match_modes":match_modes,
     }
 
