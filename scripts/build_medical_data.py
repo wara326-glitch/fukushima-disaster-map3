@@ -188,7 +188,7 @@ def parse_clinic_specialties(text):
     pref_cols=[h for h in headers if "都道府県" in h]
     specialty_cols=[h for h in headers if any(x in h for x in ["診療科","診療科目"]) and "時間" not in h and "曜日" not in h and "受付" not in h]
     if not name_col:
-        raise RuntimeError("specialty facility name column not found")
+        raise RuntimeError("specialty facility name column not found; headers="+repr(headers[:120]))
     specmap={}
     for row in reader:
         pref_hit=any((row.get(pc) or "").strip() in {"07","7","福島県"} for pc in pref_cols)
