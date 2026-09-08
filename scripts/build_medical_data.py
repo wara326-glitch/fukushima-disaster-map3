@@ -93,7 +93,13 @@ def parse_facilities(text, kind):
     if not lat_col or not lon_col:
         raise RuntimeError("lat/lon columns not found")
     out = []
+    pref_samples = []
     for row in reader:
+        if len(pref_samples) < 30:
+            for pc in pref_cols:
+                v=(row.get(pc) or "").strip()
+                if v and v not in pref_samples:
+                    pref_samples.append(v)
         pref_hit = any((row.get(c) or "").strip() in {"07","7","福島県"} for c in pref_cols)
         if not pref_hit:
             # fallback: search all address-like values
@@ -137,6 +143,7 @@ def parse_facilities(text, kind):
         "name_col":name_col,"lat_col":lat_col,"lon_col":lon_col,
         "ambulance_cols":ambulance_cols,"pref_cols":pref_cols,
         "emergency_headers":[h for h in headers if "救急" in h or "搬送" in h or "救急車" in h],
+        "pref_samples":pref_samples,
         "count":len(dedup)
     }
 
