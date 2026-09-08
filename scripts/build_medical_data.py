@@ -91,6 +91,7 @@ def parse_facilities(text, kind):
     address_col = next((h for h in headers if h.strip()=="所在地"), None)
     address_cols = [address_col] if address_col else [h for h in headers if ("住所" in h or "所在地" in h) and "座標" not in h and "英語" not in h]
     phone_col = first_matching(headers, [("電話番号",),("代表電話",)])
+    specialty_cols = [h for h in headers if kind=="clinic" and any(x in h for x in ["診療科","診療科目"]) and "対応" not in h]
     ambulance_cols = [h for h in headers if "救急車" in h and any(x in h for x in ["搬送","受入","受け入れ","件数","患者"])]
     if not name_col:
         raise RuntimeError("facility name column not found; first headers="+repr(headers[:30]))
@@ -135,6 +136,22 @@ def parse_facilities(text, kind):
             vals=[to_num(row.get(c)) for c in ambulance_cols]
             vals=[v for v in vals if v is not None and v >= 0]
             ambulance=max(vals) if vals else None
+        specialties=[]
+        if kind=="clinic":
+            raw=" ".join((row.get(sc) or "") for sc in specialty_cols)
+            specialty_map=[
+                ("内科",["内科"]),
+                ("外科",["外科"]),
+                ("小児科",["小児科"]),
+                ("整形外科",["整形外科"]),
+                ("産婦人科",["産婦人科","産科","婦人科"]),
+                ("眼科",["眼科"]),
+                ("耳鼻科",["耳鼻咽喉科","耳鼻科"]),
+                ("精神科",["精神科","心療内科"]),
+                ("皮膚科",["皮膚科"]),
+                ("泌尿器科",["泌尿器科"]),
+            ]
+            specialties=[label for label,terms in specialty_map if any(t in raw for t in terms)]
         item={
             "name":name,
             "lat":lat,
@@ -143,6 +160,7 @@ def parse_facilities(text, kind):
             "address":address,
             "phone":(row.get(phone_col) or "").strip() if phone_col else "",
             "ambulance":int(round(ambulance)) if ambulance is not None else None,
+            "specialties":specialties,
             "critical": matches(name, CRITICAL) if kind=="hospital" else False,
             "disaster": matches(name, DISASTER) if kind=="hospital" else False,
         }
@@ -154,7 +172,7 @@ def parse_facilities(text, kind):
         dedup[key]=x
     return list(dedup.values()), {
         "name_col":name_col,"lat_col":lat_col,"lon_col":lon_col,
-        "ambulance_cols":ambulance_cols,"pref_cols":pref_cols,
+        "ambulance_cols":ambulance_cols,"specialty_cols":specialty_cols,"pref_cols":pref_cols,
         "emergency_headers":[h for h in headers if "救急" in h or "搬送" in h or "救急車" in h],
         "pref_samples":pref_samples,
         "sample_pref07":sample_pref07,
