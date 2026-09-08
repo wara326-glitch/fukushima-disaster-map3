@@ -1,0 +1,23 @@
+{
+  "hospital": {
+    "name_col": "正式名称",
+    "lat_col": "所在地座標（緯度）",
+    "lon_col": "所在地座標（経度）",
+    "ambulance_cols": [],
+    "pref_cols": [
+      "都道府県コード"
+    ],
+    "count": 0
+  },
+  "clinic": {
+    "name_col": "正式名称",
+    "lat_col": "所在地座標（緯度）",
+    "lon_col": "所在地座標（経度）",
+    "ambulance_cols": [],
+    "pref_cols": [
+      "都道府県コード"
+    ],
+    "count": 0
+  },
+  "counts": {}
+}
