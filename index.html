@@ -211,6 +211,17 @@ function catText(h){
  if(h.ambulance!=null)x.push("救急車受入 "+Number(h.ambulance).toLocaleString()+"件/年（令和6年度）");
  return x.join(" / ");
 }
+function categoryDots(h){
+ const dots=[];
+ const push=(color,title)=>dots.push(`<span title="${title}" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${color};margin-right:4px;vertical-align:middle"></span>`);
+ if(h.type==="clinic"||h.clinic===true){ push("#22c55e","診療所"); return dots.join(""); }
+ if(h.critical)push("#ef4444","救命センター");
+ if(h.disaster)push("#f59e0b","災害拠点病院");
+ if(Number(h.ambulance)>=1000)push("#facc15","救急車1000台以上");
+ else if(Number(h.ambulance)>=500)push("#3b82f6","救急車500台以上");
+ if(!h.critical&&!h.disaster&&!(Number(h.ambulance)>=500))push("#94a3b8","その他の病院");
+ return dots.join("");
+}
 function markerRadius(h){
  const cat=primaryCategory(h);
  return cat==="critical"?8:cat==="clinic"?3.5:cat==="hospital"?4.5:6;
@@ -369,7 +380,7 @@ function renderResults(){
  });
  results.innerHTML=arr.map(x=>`
  <div class="hospital" data-i="${x.i}">
-   <div class="name">${displayName(x.h.name)}</div>
+   <div class="name">${categoryDots(x.h)}${displayName(x.h.name)}</div>
    <div class="meta">${catText(x.h)} ・ ${x.h.address||""}${x.h.phone?" ・ ☎ "+x.h.phone:""} ・ 直線 ${x.dist.toFixed(1)} km</div>
    <div class="times">
     <span class="pill road">陸路 ${x.road!=null?Math.round(x.road)+"分"+(roadDistances[x.i]!=null?" / "+roadDistances[x.i].toFixed(1)+"km":""):"未計算"}</span>
