@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import csv, io, json, os, re, sys, urllib.request, zipfile
+from openpyxl import load_workbook
 from pathlib import Path
 
 HOSPITAL_URL = "https://www.mhlw.go.jp/content/11121000/01-1_hospital_facility_info_20260601.csv.zip"
 CLINIC_URL = "https://www.mhlw.go.jp/content/11121000/02-1_clinic_facility_info_20260601.csv.zip"
+BED_REPORT_URL = "https://www.mhlw.go.jp/content/10800000/001717798.xlsx"
 
 CRITICAL = [
     "いわき市医療センター",
@@ -29,13 +31,14 @@ DISASTER = [
 def norm(s):
     s = (s or "").replace("\u3000"," ").strip()
     s = re.sub(r"\s+", "", s)
+    s = s.replace("―","ー").replace("－","ー").replace("ｰ","ー")
     for t in ["公立大学法人","一般財団法人","公益財団法人","医療法人","社団法人","独立行政法人","福島県厚生農業協同組合連合会","一般財団法人脳神経疾患研究所附属","一般財団法人太田綜合病院附属","一般財団法人温知会"]:
         s = s.replace(t, "")
     return s
 
 def matches(name, targets):
     n = norm(name)
-    return any(norm(t) in n or n in norm(t) for t in targets)
+    return any(norm(t) in n for t in targets)
 
 def download(url):
     req = urllib.request.Request(url, headers={"User-Agent":"fukushima-disaster-map3/1.0"})
@@ -157,6 +160,21 @@ def parse_facilities(text, kind):
         "count":len(dedup)
     }
 
+
+def inspect_bed_report():
+    blob = download(BED_REPORT_URL)
+    wb = load_workbook(io.BytesIO(blob), read_only=True, data_only=True)
+    hits=[]
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            vals=[c.value for c in row]
+            for idx,v in enumerate(vals):
+                s="" if v is None else str(v)
+                if ("救急車" in s or "救急搬送" in s or "救急医療" in s) and len(hits)<80:
+                    lo=max(0,idx-4); hi=min(len(vals),idx+8)
+                    hits.append({"sheet":ws.title,"row":row[0].row,"col":idx+1,"value":s,"context":[None if x is None else str(x) for x in vals[lo:hi]]})
+    return {"sheetnames":wb.sheetnames,"hits":hits}
+
 def category(x):
     if x["type"]=="clinic": return "clinic"
     if x.get("critical"): return "critical"
@@ -175,6 +193,7 @@ def main():
     counts={}
     for x in facilities:
         counts[x["category"]]=counts.get(x["category"],0)+1
+    bed_meta=inspect_bed_report()
     payload={
         "source":"厚生労働省 医療情報ネット オープンデータ",
         "as_of":"2026-06-01",
@@ -184,8 +203,8 @@ def main():
     }
     Path("data").mkdir(exist_ok=True)
     Path("data/fukushima_medical.json").write_text(json.dumps(payload, ensure_ascii=False, separators=(",",":")),encoding="utf-8")
-    Path("data/build-meta.json").write_text(json.dumps({"hospital":hm,"clinic":cm,"counts":counts},ensure_ascii=False,indent=2),encoding="utf-8")
-    print(json.dumps({"hospital":hm,"clinic":cm,"counts":counts}, ensure_ascii=False, indent=2))
+    Path("data/build-meta.json").write_text(json.dumps({"hospital":hm,"clinic":cm,"bed_report":bed_meta,"counts":counts},ensure_ascii=False,indent=2),encoding="utf-8")
+    print(json.dumps({"hospital":hm,"clinic":cm,"bed_report":bed_meta,"counts":counts}, ensure_ascii=False, indent=2))
 
 if __name__=="__main__":
     main()
