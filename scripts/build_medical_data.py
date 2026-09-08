@@ -41,7 +41,11 @@ def norm(s):
 
 def norm_addr(s):
     s=unicodedata.normalize("NFKC",(s or ""))
-    for t in ["福島県","〒","大字","番地","丁目","番","号"]:
+    kmap={"一":"1","二":"2","三":"3","四":"4","五":"5","六":"6","七":"7","八":"8","九":"9"}
+    # Normalize common address numerals only when used as block/number notation.
+    for k,v in kmap.items():
+        s=s.replace(k+"丁目",v+"丁目").replace(k+"番",v+"番").replace(k+"号",v+"号")
+    for t in ["福島県","〒","大字","字","番地","丁目","番","号","の"]:
         s=s.replace(t,"")
     s=s.replace("―","").replace("－","").replace("ー","").replace("-","").replace("‐","").replace("−","")
     s=re.sub(r"[\s　,，.．・/／()（）]+","",s)
