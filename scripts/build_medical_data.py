@@ -28,7 +28,7 @@ DISASTER = [
 
 def norm(s):
     s = (s or "").replace("\u3000"," ").strip()
-    s = re.sub(r"\\s+", "", s)
+    s = re.sub(r"\s+", "", s)
     for t in ["公立大学法人","一般財団法人","公益財団法人","医療法人","社団法人","独立行政法人","福島県厚生農業協同組合連合会","一般財団法人脳神経疾患研究所附属","一般財団法人太田綜合病院附属","一般財団法人温知会"]:
         s = s.replace(t, "")
     return s
@@ -72,7 +72,7 @@ def to_num(v):
     if v is None: return None
     s = str(v).replace(",","").replace("件","").replace("台","").strip()
     if not s or s in {"-","―","－","未確認","不明"}: return None
-    m = re.search(r"-?\\d+(?:\\.\\d+)?", s)
+    m = re.search(r"-?\d+(?:\.\d+)?", s)
     return float(m.group()) if m else None
 
 def parse_facilities(text, kind):
