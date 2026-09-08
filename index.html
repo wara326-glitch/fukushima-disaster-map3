@@ -247,7 +247,10 @@ async function loadMedicalData(){
    const r=await fetch("data/fukushima_medical.json?v="+Date.now(),{cache:"no-store"});
    if(!r.ok)throw new Error("medical data");
    const j=await r.json();
-   hospitals=(j.facilities||[]).filter(h=>Number.isFinite(Number(h.lat))&&Number.isFinite(Number(h.lng)));
+   hospitals=(j.facilities||[]).filter(h=>{
+     const lat=Number(h.lat),lng=Number(h.lng);
+     return Number.isFinite(lat)&&Number.isFinite(lng)&&lat>=36.7&&lat<=38.1&&lng>=139.1&&lng<=141.2;
+   });
    datasetMeta=j;
    updateCounts();
    drawHospitals();
