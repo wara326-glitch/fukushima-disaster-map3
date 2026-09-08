@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 import csv, io, json, os, re, sys, urllib.request, urllib.parse, zipfile
 from openpyxl import load_workbook
+from pypdf import PdfReader
 from pathlib import Path
 
 HOSPITAL_URL = "https://www.mhlw.go.jp/content/11121000/01-1_hospital_facility_info_20260601.csv.zip"
 CLINIC_URL = "https://www.mhlw.go.jp/content/11121000/02-1_clinic_facility_info_20260601.csv.zip"
 CLINIC_SPECIALTY_URL = "https://www.mhlw.go.jp/content/11121000/02-2_clinic_speciality_hours_20260601.csv.zip"
 BED_REPORT_URL = "https://www.mhlw.go.jp/content/10800000/001717798.xlsx"
+HOSPITAL_LIST_PDF_URL = "https://www.pref.fukushima.lg.jp/uploaded/attachment/726467.pdf"
 
 CRITICAL = [
     "いわき市医療センター",
@@ -250,6 +252,18 @@ def merge_clinic_specialties(clinics,specmap):
     return {"matched_clinics":matched,"unmatched_clinics":len(clinics)-matched}
 
 
+def inspect_hospital_pdf():
+    blob=download(HOSPITAL_LIST_PDF_URL)
+    reader=PdfReader(io.BytesIO(blob))
+    pages=[]
+    for p in reader.pages:
+        try:
+            txt=p.extract_text(extraction_mode="layout")
+        except TypeError:
+            txt=p.extract_text()
+        pages.append(txt or "")
+    return {"pages":len(pages),"sample":pages[0][:5000] if pages else ""}
+
 def parse_bed_report():
     blob = download(BED_REPORT_URL)
     wb = load_workbook(io.BytesIO(blob), read_only=True, data_only=True)
@@ -368,6 +382,7 @@ def main():
     specmap, spec_meta = parse_clinic_specialties(unzip_csv(download(CLINIC_SPECIALTY_URL)))
     spec_merge = merge_clinic_specialties(clinics, specmap)
     coord_meta = geocode_missing_coordinates(hospitals+clinics)
+    hospital_pdf_meta=inspect_hospital_pdf()
     bed_rows, bed_meta=parse_bed_report()
     merge_meta=merge_ambulance_counts(hospitals, bed_rows)
     facilities=hospitals+clinics
@@ -404,7 +419,7 @@ def main():
         "ambulance_1000_count":sum(1 for x in hospitals if (x.get("ambulance") or 0)>=1000),
         "ambulance_500_999_count":sum(1 for x in hospitals if 500 <= (x.get("ambulance") or 0) < 1000),
     }
-    meta={"hospital":hm,"clinic":cm,"clinic_specialty":spec_meta,"clinic_specialty_merge":spec_merge,"coordinate_fallback":coord_meta,"bed_report":bed_meta,"merge":merge_meta,"counts":counts,"ambulance_rank":ambulance_rank,"audit":audit}
+    meta={"hospital":hm,"clinic":cm,"clinic_specialty":spec_meta,"clinic_specialty_merge":spec_merge,"coordinate_fallback":coord_meta,"hospital_pdf":hospital_pdf_meta,"bed_report":bed_meta,"merge":merge_meta,"counts":counts,"ambulance_rank":ambulance_rank,"audit":audit}
     Path("data/build-meta.json").write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding="utf-8")
     print(json.dumps(meta, ensure_ascii=False, indent=2))
 
