@@ -180,21 +180,22 @@ def parse_bed_report():
     if not name_col or not pref_col or not ambulance_col:
         raise RuntimeError("Required bed report columns not found")
     rows=[]
-    for r in range(6, ws.max_row+1):
-        pref=ws.cell(r,pref_col).value
+    max_needed=max(x for x in [name_col,pref_col,ambulance_col,tertiary_col,secondary_col] if x)
+    for vals in ws.iter_rows(min_row=6, max_col=max_needed, values_only=True):
+        pref=vals[pref_col-1]
         ps=str(pref).strip()
         if ps.endswith(".0"): ps=ps[:-2]
         if ps.zfill(2)!="07":
             continue
-        name=str(ws.cell(r,name_col).value or "").strip()
+        name=str(vals[name_col-1] or "").strip()
         if not name:
             continue
-        aval=to_num(ws.cell(r,ambulance_col).value)
+        aval=to_num(vals[ambulance_col-1])
         rows.append({
             "name":name,
             "ambulance":int(round(aval)) if aval is not None else None,
-            "tertiary":ws.cell(r,tertiary_col).value if tertiary_col else None,
-            "secondary":ws.cell(r,secondary_col).value if secondary_col else None,
+            "tertiary":vals[tertiary_col-1] if tertiary_col else None,
+            "secondary":vals[secondary_col-1] if secondary_col else None,
         })
     return rows, {
         "sheet":ws.title,
