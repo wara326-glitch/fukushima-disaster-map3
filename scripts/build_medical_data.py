@@ -5,6 +5,7 @@ from pathlib import Path
 
 HOSPITAL_URL = "https://www.mhlw.go.jp/content/11121000/01-1_hospital_facility_info_20260601.csv.zip"
 CLINIC_URL = "https://www.mhlw.go.jp/content/11121000/02-1_clinic_facility_info_20260601.csv.zip"
+CLINIC_SPECIALTY_URL = "https://www.mhlw.go.jp/content/11121000/02-2_clinic_speciality_hours_20260601.csv.zip"
 BED_REPORT_URL = "https://www.mhlw.go.jp/content/10800000/001717798.xlsx"
 
 CRITICAL = [
@@ -180,6 +181,67 @@ def parse_facilities(text, kind):
     }
 
 
+def parse_clinic_specialties(text):
+    reader=csv.DictReader(io.StringIO(text))
+    headers=reader.fieldnames or []
+    name_col=first_matching(headers,[("正式名称",),("施設名称",),("医療機関名",),("機関名",)])
+    pref_cols=[h for h in headers if "都道府県" in h]
+    specialty_cols=[h for h in headers if any(x in h for x in ["診療科","診療科目"]) and "時間" not in h and "曜日" not in h and "受付" not in h]
+    if not name_col:
+        raise RuntimeError("specialty facility name column not found")
+    specmap={}
+    for row in reader:
+        pref_hit=any((row.get(pc) or "").strip() in {"07","7","福島県"} for pc in pref_cols)
+        if not pref_hit:
+            continue
+        name=(row.get(name_col) or "").strip()
+        if not name:
+            continue
+        raw=" ".join((row.get(sc) or "") for sc in specialty_cols)
+        specialty_map=[
+            ("内科",["内科"]),
+            ("外科",["外科"]),
+            ("小児科",["小児科"]),
+            ("整形外科",["整形外科"]),
+            ("産婦人科",["産婦人科","産科","婦人科"]),
+            ("眼科",["眼科"]),
+            ("耳鼻科",["耳鼻咽喉科","耳鼻科"]),
+            ("精神科",["精神科","心療内科"]),
+            ("皮膚科",["皮膚科"]),
+            ("泌尿器科",["泌尿器科"]),
+        ]
+        specs={label for label,terms in specialty_map if any(t in raw for t in terms)}
+        if specs:
+            specmap.setdefault(norm(name),set()).update(specs)
+    return {k:sorted(v) for k,v in specmap.items()}, {
+        "name_col":name_col,
+        "pref_cols":pref_cols,
+        "specialty_cols":specialty_cols,
+        "headers_with_specialty":[h for h in headers if "診療" in h or "科" in h][:80],
+        "matched_facilities":len(specmap),
+    }
+
+def merge_clinic_specialties(clinics,specmap):
+    matched=0
+    for h in clinics:
+        hn=norm(h["name"])
+        specs=specmap.get(hn)
+        if not specs:
+            candidates=[]
+            for sn,sv in specmap.items():
+                if min(len(hn),len(sn))>=6 and (hn in sn or sn in hn):
+                    candidates.append((abs(len(hn)-len(sn)),sv))
+            if candidates:
+                candidates.sort(key=lambda z:z[0])
+                specs=candidates[0][1]
+        if specs:
+            h["specialties"]=list(specs)
+            matched+=1
+        else:
+            h["specialties"]=[]
+    return {"matched_clinics":matched,"unmatched_clinics":len(clinics)-matched}
+
+
 def parse_bed_report():
     blob = download(BED_REPORT_URL)
     wb = load_workbook(io.BytesIO(blob), read_only=True, data_only=True)
@@ -261,6 +323,8 @@ def category(x):
 def main():
     hospitals, hm = parse_facilities(unzip_csv(download(HOSPITAL_URL)), "hospital")
     clinics, cm = parse_facilities(unzip_csv(download(CLINIC_URL)), "clinic")
+    specmap, spec_meta = parse_clinic_specialties(unzip_csv(download(CLINIC_SPECIALTY_URL)))
+    spec_merge = merge_clinic_specialties(clinics, specmap)
     bed_rows, bed_meta=parse_bed_report()
     merge_meta=merge_ambulance_counts(hospitals, bed_rows)
     facilities=hospitals+clinics
@@ -272,7 +336,7 @@ def main():
     payload={
         "source":"厚生労働省 医療情報ネット オープンデータ",
         "as_of":"2026-06-01",
-        "generated_from":{"hospital":HOSPITAL_URL,"clinic":CLINIC_URL,"bed_report":BED_REPORT_URL},
+        "generated_from":{"hospital":HOSPITAL_URL,"clinic":CLINIC_URL,"clinic_specialty":CLINIC_SPECIALTY_URL,"bed_report":BED_REPORT_URL},
         "ambulance_period":"2024-04-01/2025-03-31",
         "counts":counts,
         "facilities":facilities,
@@ -283,7 +347,7 @@ def main():
         [{"name":h["name"],"ambulance":h.get("ambulance"),"category":h.get("category")} for h in hospitals if h.get("ambulance") is not None],
         key=lambda x:x["ambulance"], reverse=True
     )
-    meta={"hospital":hm,"clinic":cm,"bed_report":bed_meta,"merge":merge_meta,"counts":counts,"ambulance_rank":ambulance_rank}
+    meta={"hospital":hm,"clinic":cm,"clinic_specialty":spec_meta,"clinic_specialty_merge":spec_merge,"bed_report":bed_meta,"merge":merge_meta,"counts":counts,"ambulance_rank":ambulance_rank}
     Path("data/build-meta.json").write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding="utf-8")
     print(json.dumps(meta, ensure_ascii=False, indent=2))
 
