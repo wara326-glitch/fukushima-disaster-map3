@@ -107,7 +107,7 @@
         }
       }
     ],
-    "count": 0
+    "count": 119
   },
   "clinic": {
     "name_col": "正式名称",
@@ -217,7 +217,12 @@
         }
       }
     ],
-    "count": 0
+    "count": 953
   },
-  "counts": {}
+  "counts": {
+    "hospital": 107,
+    "disaster": 9,
+    "critical": 3,
+    "clinic": 953
+  }
 }
