@@ -248,8 +248,8 @@
     ]
   },
   "clinic_specialty_merge": {
-    "matched_clinics": 915,
-    "unmatched_clinics": 38
+    "matched_clinics": 949,
+    "unmatched_clinics": 4
   },
   "bed_report": {
     "sheet": "Sheet1",
