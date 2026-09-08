@@ -173,7 +173,9 @@ def inspect_bed_report():
                 if ("救急車" in s or "救急搬送" in s or "救急医療" in s) and len(hits)<80:
                     lo=max(0,idx-4); hi=min(len(vals),idx+8)
                     hits.append({"sheet":ws.title,"row":row[0].row,"col":idx+1,"value":s,"context":[None if x is None else str(x) for x in vals[lo:hi]]})
-    return {"sheetnames":wb.sheetnames,"hits":hits}
+    ws=wb[wb.sheetnames[0]]
+    row5=[ws.cell(5,i).value for i in range(1,min(ws.max_column,220)+1)]
+    return {"sheetnames":wb.sheetnames,"hits":hits,"row5":[None if v is None else str(v) for v in row5]}
 
 def category(x):
     if x["type"]=="clinic": return "clinic"
