@@ -98,9 +98,9 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 <div>
 <label>陸路計算対象</label>
 <select id="roadLimit">
-<option value="all">表示中の全病院</option>
-<option value="10">近い10病院</option>
-<option value="5">近い5病院</option>
+<option value="10" selected>近い10施設</option>
+<option value="5">近い5施設</option>
+<option value="all">表示中の全施設（多数の場合注意）</option>
 </select>
 </div>
 </div>
@@ -123,7 +123,7 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 
 <div class="card small" style="margin-top:10px">
 <b>データについて</b><br>
-初期データは福島県の公開情報をもとにした実証用スターターセットです。正式運用時は県・消防・医師会で確定した二次救急医療機関マスタ、受入可否、ヘリポート情報、通行止め情報等への置換を想定しています。
+施設名・所在地・緯度経度は厚生労働省「医療情報ネット」オープンデータ（2026年6月1日時点）を使用しています。救急車受入件数は厚生労働省「令和7年度 病床機能報告」施設票の令和6年度実績を使用しています。救命センター・災害拠点病院は公的指定情報をもとに分類しています。実災害時の受入可否、診療機能、通行止め等は別途確認してください。
 </div>
 </aside>
 <div id="map"></div>
@@ -133,35 +133,8 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 <script>
 // 実証用スターターセット。
 // 正式運用では県公式マスタ（CSV/GeoJSON/API）へ差替え推奨。
-const hospitals = [
-{name:"福島県立医科大学附属病院",lat:37.6896,lng:140.4726,critical:true,disaster:true,secondary:false,area:"県北"},
-{name:"福島赤十字病院",lat:37.7693,lng:140.4806,critical:false,disaster:true,secondary:true,area:"県北"},
-{name:"大原綜合病院",lat:37.7554,lng:140.4610,critical:false,disaster:false,secondary:true,area:"県北"},
-{name:"済生会福島総合病院",lat:37.7332,lng:140.4568,critical:false,disaster:false,secondary:true,area:"県北"},
-{name:"公立藤田総合病院",lat:37.8763,lng:140.5502,critical:false,disaster:true,secondary:true,area:"県北"},
-{name:"枡記念病院",lat:37.5907,lng:140.4304,critical:false,disaster:true,secondary:true,area:"県北"},
-{name:"太田西ノ内病院",lat:37.4074,lng:140.3678,critical:true,disaster:true,secondary:true,area:"県中"},
-{name:"総合南東北病院",lat:37.4213,lng:140.3835,critical:false,disaster:true,secondary:true,area:"県中"},
-{name:"星総合病院",lat:37.3997,lng:140.3927,critical:false,disaster:false,secondary:true,area:"県中"},
-{name:"寿泉堂綜合病院",lat:37.3960,lng:140.3847,critical:false,disaster:false,secondary:true,area:"県中"},
-{name:"公立岩瀬病院",lat:37.2898,lng:140.3727,critical:false,disaster:true,secondary:true,area:"県中"},
-{name:"須賀川病院",lat:37.2849,lng:140.3723,critical:false,disaster:false,secondary:true,area:"県中"},
-{name:"ひらた中央病院",lat:37.2260,lng:140.5740,critical:false,disaster:false,secondary:true,area:"県中"},
-{name:"白河厚生総合病院",lat:37.1395,lng:140.2141,critical:false,disaster:true,secondary:true,area:"県南"},
-{name:"会津中央病院",lat:37.5085,lng:139.9490,critical:true,disaster:true,secondary:true,area:"会津"},
-{name:"竹田綜合病院",lat:37.4940,lng:139.9248,critical:false,disaster:true,secondary:true,area:"会津"},
-{name:"福島県立医科大学会津医療センター",lat:37.5570,lng:139.8758,critical:false,disaster:true,secondary:true,area:"会津"},
-{name:"福島県立南会津病院",lat:37.2058,lng:139.7736,critical:false,disaster:true,secondary:true,area:"南会津"},
-{name:"いわき市医療センター",lat:37.0636,lng:140.8907,critical:true,disaster:true,secondary:true,area:"いわき"},
-{name:"福島労災病院",lat:37.0503,lng:140.8948,critical:false,disaster:true,secondary:true,area:"いわき"},
-{name:"松村総合病院",lat:37.0569,lng:140.8897,critical:false,disaster:false,secondary:true,area:"いわき"},
-{name:"かしま病院",lat:36.9960,lng:140.9014,critical:false,disaster:false,secondary:true,area:"いわき"},
-{name:"呉羽総合病院",lat:36.9494,lng:140.8624,critical:false,disaster:false,secondary:true,area:"いわき"},
-{name:"南相馬市立総合病院",lat:37.6380,lng:140.9577,critical:false,disaster:true,secondary:true,area:"相双"},
-{name:"公立相馬総合病院",lat:37.8008,lng:140.9163,critical:false,disaster:true,secondary:true,area:"相双"},
-{name:"双葉医療センター附属病院",lat:37.4520,lng:141.0143,critical:false,disaster:false,secondary:true,area:"相双"},
-{name:"ふたば医療センター附属病院",lat:37.4520,lng:141.0143,critical:false,disaster:false,secondary:true,area:"相双"}
-];
+let hospitals = [];
+let datasetMeta = null;
 
 const map=L.map('map',{zoomControl:true}).setView([37.40,140.30],9);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
@@ -188,8 +161,12 @@ function visible(h){return activeCategory==="all"||primaryCategory(h)===activeCa
 function catText(h){
  const labels={critical:"救命センター",disaster:"災害拠点病院",ambulance1000:"救急車1000台以上",ambulance500:"救急車500台以上",hospital:"その他の病院",clinic:"診療所"};
  let x=[labels[primaryCategory(h)]];
- if(h.ambulance)x.push("救急車受入 "+Number(h.ambulance).toLocaleString()+"台/年");
+ if(h.ambulance!=null)x.push("救急車受入 "+Number(h.ambulance).toLocaleString()+"件/年（令和6年度）");
  return x.join(" / ");
+}
+function markerRadius(h){
+ const cat=primaryCategory(h);
+ return cat==="critical"?8:cat==="clinic"?3.5:cat==="hospital"?4.5:6;
 }
 function updateCounts(){
  const cats=["critical","disaster","ambulance1000","ambulance500","hospital","clinic"];
@@ -201,13 +178,30 @@ function drawHospitals(){
  hospitalLayers.forEach(x=>map.removeLayer(x));hospitalLayers.clear();
  hospitals.forEach((h,i)=>{
    if(!visible(h))return;
-   const m=L.circleMarker([h.lat,h.lng],{radius:primaryCategory(h)==="critical"?8:6,color:"#fff",weight:1,fillColor:iconColor(h),fillOpacity:.95})
-     .addTo(map).bindPopup(`<b>${h.name}</b><br>${catText(h)}<br>${h.area}`);
+   const m=L.circleMarker([h.lat,h.lng],{radius:markerRadius(h),color:"#fff",weight:1,fillColor:iconColor(h),fillOpacity:.92})
+     .addTo(map).bindPopup(`<b>${h.name}</b><br>${catText(h)}<br>${h.address||""}`);
    hospitalLayers.set(i,m);
  });
 }
-updateCounts();
-drawHospitals();
+async function loadMedicalData(){
+ status.textContent="福島県内の医療機関データを読み込み中…";
+ try{
+   const r=await fetch("data/fukushima_medical.json?v="+Date.now(),{cache:"no-store"});
+   if(!r.ok)throw new Error("medical data");
+   const j=await r.json();
+   hospitals=(j.facilities||[]).filter(h=>Number.isFinite(Number(h.lat))&&Number.isFinite(Number(h.lng)));
+   datasetMeta=j;
+   updateCounts();
+   drawHospitals();
+   renderResults();
+   const hc=hospitals.filter(h=>h.type==="hospital").length;
+   const cc=hospitals.filter(h=>h.type==="clinic").length;
+   status.textContent=`厚生労働省 医療情報ネット（${j.as_of||"最新取得"}時点）：病院 ${hc}施設 / 診療所 ${cc}施設を表示しています。`;
+ }catch(e){
+   console.error(e);
+   status.textContent="医療機関データの読み込みに失敗しました。";
+ }
+}
 document.querySelectorAll("#categoryTabs .tab").forEach(btn=>{
  btn.onclick=()=>{
    activeCategory=btn.dataset.category;
@@ -312,7 +306,7 @@ function renderResults(){
  results.innerHTML=arr.map(x=>`
  <div class="hospital" data-i="${x.i}">
    <div class="name">${x.h.name}</div>
-   <div class="meta">${catText(x.h)} ・ ${x.h.area} ・ 直線 ${x.dist.toFixed(1)} km</div>
+   <div class="meta">${catText(x.h)} ・ ${x.h.address||""} ・ 直線 ${x.dist.toFixed(1)} km</div>
    <div class="times">
     <span class="pill road">陸路 ${x.road!=null?Math.round(x.road)+"分"+(roadDistances[x.i]!=null?" / "+roadDistances[x.i].toFixed(1)+"km":""):"未計算"}</span>
     <span class="pill air">空路 約${Math.round(x.air)}分</span>
@@ -391,7 +385,7 @@ async function showRoute(i){
    status.textContent=`${arrow}: 陸路 約${Math.round(min)}分 / ${km.toFixed(1)} km`;
  }catch(e){status.textContent="ルート取得に失敗しました。道路データまたは公開ルーティングサービスの状態をご確認ください。"}
 }
-renderResults();
+loadMedicalData();
 </script>
 </body>
 </html>
