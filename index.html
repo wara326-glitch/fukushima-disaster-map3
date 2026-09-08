@@ -145,6 +145,7 @@ let incident=null,incidentMarker=null,routeLayer=null;
 let activeCategory="all";
 const hospitalLayers=new Map();
 
+function displayName(s){return String(s||"").replaceAll("―","ー").replaceAll("－","ー").replaceAll("ｰ","ー")}
 function primaryCategory(h){
  if(h.type==="clinic"||h.clinic===true)return "clinic";
  if(h.critical)return "critical";
@@ -197,7 +198,7 @@ function drawHospitals(){
  hospitals.forEach((h,i)=>{
    if(!visible(h))return;
    const m=L.circleMarker([h.lat,h.lng],{radius:markerRadius(h),color:"#fff",weight:1,fillColor:iconColor(h),fillOpacity:.92})
-     .addTo(map).bindPopup(`<b>${h.name}</b><br>${catText(h)}<br>${h.address||""}`);
+     .addTo(map).bindPopup(`<b>${displayName(h.name)}</b><br>${catText(h)}<br>${h.address||""}`);
    hospitalLayers.set(i,m);
  });
 }
@@ -323,7 +324,7 @@ function renderResults(){
  });
  results.innerHTML=arr.map(x=>`
  <div class="hospital" data-i="${x.i}">
-   <div class="name">${x.h.name}</div>
+   <div class="name">${displayName(x.h.name)}</div>
    <div class="meta">${catText(x.h)} ・ ${x.h.address||""} ・ 直線 ${x.dist.toFixed(1)} km</div>
    <div class="times">
     <span class="pill road">陸路 ${x.road!=null?Math.round(x.road)+"分"+(roadDistances[x.i]!=null?" / "+roadDistances[x.i].toFixed(1)+"km":""):"未計算"}</span>
@@ -390,7 +391,7 @@ async function showRoute(i){
  const dir=(routeDirection?.value||"incidentToHospital");
  const from = dir==="hospitalToIncident" ? `${h.lng},${h.lat}` : `${incident.lng},${incident.lat}`;
  const to   = dir==="hospitalToIncident" ? `${incident.lng},${incident.lat}` : `${h.lng},${h.lat}`;
- const arrow= dir==="hospitalToIncident" ? `${h.name} → 現場` : `現場 → ${h.name}`;
+ const arrow= dir==="hospitalToIncident" ? `${displayName(h.name)} → 現場` : `現場 → ${displayName(h.name)}`;
  status.textContent=`${arrow} の陸路を取得中…`;
  try{
    const url=`https://router.project-osrm.org/route/v1/driving/${from};${to}?overview=full&geometries=geojson`;
