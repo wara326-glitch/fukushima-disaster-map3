@@ -177,6 +177,7 @@ def parse_facilities(text, kind):
         "name_col":name_col,"id_col":id_col,"lat_col":lat_col,"lon_col":lon_col,
         "ambulance_cols":ambulance_cols,"specialty_cols":specialty_cols,"pref_cols":pref_cols,
         "emergency_headers":[h for h in headers if "救急" in h or "搬送" in h or "救急車" in h],
+        "phone_headers":[h for h in headers if "電話" in h or "連絡" in h or "TEL" in h.upper()],
         "pref_samples":pref_samples,
         "sample_pref07":sample_pref07,
         "count":len(dedup)
