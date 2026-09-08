@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import csv, io, json, os, re, sys, urllib.request, urllib.parse, zipfile
+import csv, io, json, os, re, sys, urllib.request, urllib.parse, zipfile, unicodedata
 from openpyxl import load_workbook
 from pypdf import PdfReader
 from pathlib import Path
@@ -32,11 +32,19 @@ DISASTER = [
 ]
 
 def norm(s):
-    s = (s or "").replace("\u3000"," ").strip()
+    s = unicodedata.normalize("NFKC",(s or "")).replace("\u3000"," ").strip()
     s = re.sub(r"\s+", "", s)
     s = s.replace("―","ー").replace("－","ー").replace("ｰ","ー").replace("ヶ","ケ").replace("ヵ","カ")
     for t in ["公立大学法人","一般財団法人","公益財団法人","医療法人","社団法人","独立行政法人","福島県厚生農業協同組合連合会","一般財団法人脳神経疾患研究所附属","一般財団法人太田綜合病院附属","一般財団法人温知会"]:
         s = s.replace(t, "")
+    return s
+
+def norm_addr(s):
+    s=unicodedata.normalize("NFKC",(s or ""))
+    for t in ["福島県","〒","大字","字","番地","番","号"]:
+        s=s.replace(t,"")
+    s=s.replace("―","-").replace("－","-").replace("ー","-")
+    s=re.sub(r"\s+","",s)
     return s
 
 def matches(name, targets):
@@ -264,38 +272,64 @@ def parse_hospital_pdf_phones(hospitals):
         pages.append(txt or "")
     page_lines=[p.splitlines() for p in pages]
     phone_re=re.compile(r"\(0\d{1,4}\)[\s　]*\d{1,4}-\d{2,4}")
+
+    def normalize_phone(s):
+        s=unicodedata.normalize("NFKC",s)
+        return re.sub(r"\s+"," ",s).strip()
+
     matched=[]
     unmatched=[]
+    match_modes={}
     for h in hospitals:
         target=norm(h["name"])
+        addr=norm_addr(h.get("address",""))
         candidates=[]
+
+        # 1) Exact normalized facility-name match across a short row window.
         for pi,lines in enumerate(page_lines):
             for i in range(len(lines)):
-                # Hospital names in the official PDF may span several lines.
                 window=lines[i:i+5]
-                nwin=norm("".join(window))
-                if target and target in nwin:
+                if target and target in norm("".join(window)):
                     phones=[]
                     for offset,line in enumerate(window):
                         for m in phone_re.finditer(line):
-                            phones.append((offset,m.start(),m.group()))
+                            phones.append((offset,m.start(),normalize_phone(m.group())))
                     if phones:
                         phones.sort()
-                        # Prefer a phone on the same/earliest hospital-name line.
-                        phone=phones[0][2]
-                        phone=re.sub(r"[\s　]+"," ",phone).strip()
-                        candidates.append((pi,i,phone))
+                        candidates.append(("name",pi,i,phones[0][2]))
+
+        # 2) Official-address match. The phone is generally one line above
+        # the street-address line, while the fax is on the address line.
+        if not candidates and addr:
+            for pi,lines in enumerate(page_lines):
+                for i,line in enumerate(lines):
+                    if addr in norm_addr(line) or norm_addr(line) in addr and len(norm_addr(line))>=8:
+                        lo=max(0,i-1); hi=min(len(lines),i+2)
+                        phones=[]
+                        for j in range(lo,hi):
+                            for m in phone_re.finditer(lines[j]):
+                                phones.append((j,m.start(),normalize_phone(m.group())))
+                        if phones:
+                            phones.sort()
+                            # Prefer phone on preceding line; otherwise earliest.
+                            prev=[x for x in phones if x[0]==i-1]
+                            chosen=(prev[0] if prev else phones[0])[2]
+                            candidates.append(("address",pi,i,chosen))
+
         if candidates:
-            candidates.sort()
-            h["phone"]=candidates[0][2]
+            candidates.sort(key=lambda x:(0 if x[0]=="name" else 1,x[1],x[2]))
+            mode,_,_,phone=candidates[0]
+            h["phone"]=phone
             h["phone_source"]="福島県 県内病院一覧（令和8年1月1日現在）"
             matched.append(h["name"])
+            match_modes[mode]=match_modes.get(mode,0)+1
         else:
             unmatched.append(h["name"])
     return {
         "pages":len(pages),
         "matched_hospitals":len(matched),
         "unmatched_hospitals":unmatched,
+        "match_modes":match_modes,
     }
 
 def parse_bed_report():
