@@ -94,7 +94,7 @@ def parse_facilities(text, kind):
         raise RuntimeError("lat/lon columns not found")
     out = []
     for row in reader:
-        pref_hit = any((row.get(c) or "").strip() == "福島県" for c in pref_cols)
+        pref_hit = any((row.get(c) or "").strip() in {"07","7","福島県"} for c in pref_cols)
         if not pref_hit:
             # fallback: search all address-like values
             pref_hit = any("福島県" in (row.get(c) or "") for c in address_cols)
@@ -136,6 +136,7 @@ def parse_facilities(text, kind):
     return list(dedup.values()), {
         "name_col":name_col,"lat_col":lat_col,"lon_col":lon_col,
         "ambulance_cols":ambulance_cols,"pref_cols":pref_cols,
+        "emergency_headers":[h for h in headers if "救急" in h or "搬送" in h or "救急車" in h],
         "count":len(dedup)
     }
 
