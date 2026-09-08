@@ -66,7 +66,7 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 <button class="tab" data-category="hospital">⚪ その他の病院 <span class="count" id="count-hospital">0</span></button>
 <button class="tab" data-category="clinic">🟢 診療所 <span class="count" id="count-clinic">0</span></button>
 </div>
-<div class="small" style="margin-top:7px">タブを押すと該当施設だけを表示します。複数区分に該当する施設は、それぞれ該当するタブに表示します（例：救命センターかつ災害拠点病院）。「救急車500台以上」には1000台以上の病院も含みます。</div>
+<div class="small" style="margin-top:7px">タブは複数同時に選択できます。選択したカテゴリーのいずれかに該当する施設をまとめて表示します。「すべて表示」を押すと選択状態をリセットして全施設を表示します。複数区分に該当する施設は、それぞれ該当するタブに表示されます。</div>
 </div>
 
 <div class="card">
@@ -142,7 +142,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 }).addTo(map);
 
 let incident=null,incidentMarker=null,routeLayer=null;
-let activeCategory="all";
+let activeCategories=new Set(["all"]);
 const hospitalLayers=new Map();
 
 function displayName(s){return String(s||"").replaceAll("―","ー").replaceAll("－","ー").replaceAll("ｰ","ー")}
@@ -169,7 +169,13 @@ function belongsToCategory(h,cat){
  if(cat==="hospital")return !h.critical&&!h.disaster&&!(Number(h.ambulance)>=500);
  return false;
 }
-function visible(h){return belongsToCategory(h,activeCategory)}
+function visible(h){
+ if(activeCategories.has("all"))return true;
+ for(const cat of activeCategories){
+   if(belongsToCategory(h,cat))return true;
+ }
+ return false;
+}
 function catText(h){
  let x=[];
  if(h.type==="clinic"||h.clinic===true)x.push("診療所");
@@ -223,8 +229,25 @@ async function loadMedicalData(){
 }
 document.querySelectorAll("#categoryTabs .tab").forEach(btn=>{
  btn.onclick=()=>{
-   activeCategory=btn.dataset.category;
-   document.querySelectorAll("#categoryTabs .tab").forEach(x=>x.classList.toggle("active",x===btn));
+   const cat=btn.dataset.category;
+
+   if(cat==="all"){
+     activeCategories=new Set(["all"]);
+   }else{
+     activeCategories.delete("all");
+     if(activeCategories.has(cat)) activeCategories.delete(cat);
+     else activeCategories.add(cat);
+
+     if(activeCategories.size===0){
+       activeCategories=new Set(["all"]);
+     }
+   }
+
+   document.querySelectorAll("#categoryTabs .tab").forEach(x=>{
+     const xcat=x.dataset.category;
+     x.classList.toggle("active", activeCategories.has(xcat));
+   });
+
    if(routeLayer){map.removeLayer(routeLayer);routeLayer=null}
    roadTimes={};roadDistances={};
    drawHospitals();renderResults();
