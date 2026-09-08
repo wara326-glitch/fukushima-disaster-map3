@@ -85,6 +85,7 @@ def parse_facilities(text, kind):
     name_col = first_matching(headers, [
         ("正式名称",), ("施設名称",), ("医療機関名",), ("機関名",)
     ])
+    id_col = next((h for h in headers if h.strip()=="ID"), None)
     lat_col = first_matching(headers, [("緯度",)])
     lon_col = first_matching(headers, [("経度",)])
     pref_cols = [h for h in headers if "都道府県" in h]
@@ -155,6 +156,7 @@ def parse_facilities(text, kind):
             specialties=[label for label,terms in specialty_map if any(t in raw for t in terms)]
         item={
             "name":name,
+            "source_id":(row.get(id_col) or "").strip() if id_col else "",
             "lat":lat,
             "lng":lng,
             "type":kind,
@@ -172,7 +174,7 @@ def parse_facilities(text, kind):
         key=(norm(x["name"]), round(x["lat"],5), round(x["lng"],5))
         dedup[key]=x
     return list(dedup.values()), {
-        "name_col":name_col,"lat_col":lat_col,"lon_col":lon_col,
+        "name_col":name_col,"id_col":id_col,"lat_col":lat_col,"lon_col":lon_col,
         "ambulance_cols":ambulance_cols,"specialty_cols":specialty_cols,"pref_cols":pref_cols,
         "emergency_headers":[h for h in headers if "救急" in h or "搬送" in h or "救急車" in h],
         "pref_samples":pref_samples,
@@ -184,56 +186,46 @@ def parse_facilities(text, kind):
 def parse_clinic_specialties(text):
     reader=csv.DictReader(io.StringIO(text))
     headers=reader.fieldnames or []
-    name_col=first_matching(headers,[("正式名称",),("施設名称",),("医療機関名",),("機関名",)])
-    pref_cols=[h for h in headers if "都道府県" in h]
-    specialty_cols=[h for h in headers if any(x in h for x in ["診療科","診療科目"]) and "時間" not in h and "曜日" not in h and "受付" not in h]
-    if not name_col:
-        raise RuntimeError("specialty facility name column not found; headers="+repr(headers[:120]))
+    id_col=next((h for h in headers if h.strip()=="ID"), None)
+    code_col=next((h for h in headers if h.strip()=="診療科目コード"), None)
+    name_col=next((h for h in headers if h.strip()=="診療科目名"), None)
+    if not id_col or not name_col:
+        raise RuntimeError("specialty ID/name columns not found; headers="+repr(headers[:120]))
     specmap={}
+    specialty_map=[
+        ("内科",["内科"]),
+        ("外科",["外科"]),
+        ("小児科",["小児科"]),
+        ("整形外科",["整形外科"]),
+        ("産婦人科",["産婦人科","産科","婦人科"]),
+        ("眼科",["眼科"]),
+        ("耳鼻科",["耳鼻咽喉科","耳鼻科"]),
+        ("精神科",["精神科","心療内科"]),
+        ("皮膚科",["皮膚科"]),
+        ("泌尿器科",["泌尿器科"]),
+    ]
     for row in reader:
-        pref_hit=any((row.get(pc) or "").strip() in {"07","7","福島県"} for pc in pref_cols)
-        if not pref_hit:
+        sid=(row.get(id_col) or "").strip()
+        sname=(row.get(name_col) or "").strip()
+        if not sid or not sname:
             continue
-        name=(row.get(name_col) or "").strip()
-        if not name:
-            continue
-        raw=" ".join((row.get(sc) or "") for sc in specialty_cols)
-        specialty_map=[
-            ("内科",["内科"]),
-            ("外科",["外科"]),
-            ("小児科",["小児科"]),
-            ("整形外科",["整形外科"]),
-            ("産婦人科",["産婦人科","産科","婦人科"]),
-            ("眼科",["眼科"]),
-            ("耳鼻科",["耳鼻咽喉科","耳鼻科"]),
-            ("精神科",["精神科","心療内科"]),
-            ("皮膚科",["皮膚科"]),
-            ("泌尿器科",["泌尿器科"]),
-        ]
-        specs={label for label,terms in specialty_map if any(t in raw for t in terms)}
+        specs={label for label,terms in specialty_map if any(t in sname for t in terms)}
         if specs:
-            specmap.setdefault(norm(name),set()).update(specs)
+            specmap.setdefault(sid,set()).update(specs)
     return {k:sorted(v) for k,v in specmap.items()}, {
+        "id_col":id_col,
+        "code_col":code_col,
         "name_col":name_col,
-        "pref_cols":pref_cols,
-        "specialty_cols":specialty_cols,
-        "headers_with_specialty":[h for h in headers if "診療" in h or "科" in h][:80],
-        "matched_facilities":len(specmap),
+        "matched_ids":len(specmap),
+        "headers":headers[:40],
     }
+
 
 def merge_clinic_specialties(clinics,specmap):
     matched=0
     for h in clinics:
-        hn=norm(h["name"])
-        specs=specmap.get(hn)
-        if not specs:
-            candidates=[]
-            for sn,sv in specmap.items():
-                if min(len(hn),len(sn))>=6 and (hn in sn or sn in hn):
-                    candidates.append((abs(len(hn)-len(sn)),sv))
-            if candidates:
-                candidates.sort(key=lambda z:z[0])
-                specs=candidates[0][1]
+        sid=(h.get("source_id") or "").strip()
+        specs=specmap.get(sid)
         if specs:
             h["specialties"]=list(specs)
             matched+=1
