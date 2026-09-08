@@ -66,7 +66,7 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 <button class="tab" data-category="hospital">⚪ その他の病院 <span class="count" id="count-hospital">0</span></button>
 <button class="tab" data-category="clinic">🟢 診療所 <span class="count" id="count-clinic">0</span></button>
 </div>
-<div class="small" style="margin-top:7px">タブを押すと該当施設だけを表示します。複数区分に該当する施設は「救命センター → 災害拠点病院 → 救急車受入台数」の順で優先分類します。</div>
+<div class="small" style="margin-top:7px">タブを押すと該当施設だけを表示します。複数区分に該当する施設は、それぞれ該当するタブに表示します（例：救命センターかつ災害拠点病院）。「救急車500台以上」には1000台以上の病院も含みます。</div>
 </div>
 
 <div class="card">
@@ -157,10 +157,28 @@ function iconColor(h){
  const cat=primaryCategory(h);
  return {critical:"#ef4444",disaster:"#f59e0b",ambulance1000:"#facc15",ambulance500:"#3b82f6",hospital:"#94a3b8",clinic:"#22c55e"}[cat]||"#94a3b8";
 }
-function visible(h){return activeCategory==="all"||primaryCategory(h)===activeCategory}
+function belongsToCategory(h,cat){
+ if(cat==="all")return true;
+ if(cat==="clinic")return h.type==="clinic"||h.clinic===true;
+ if(h.type==="clinic"||h.clinic===true)return false;
+ if(cat==="critical")return !!h.critical;
+ if(cat==="disaster")return !!h.disaster;
+ if(cat==="ambulance1000")return Number(h.ambulance)>=1000;
+ if(cat==="ambulance500")return Number(h.ambulance)>=500;
+ if(cat==="hospital")return !h.critical&&!h.disaster&&!(Number(h.ambulance)>=500);
+ return false;
+}
+function visible(h){return belongsToCategory(h,activeCategory)}
 function catText(h){
- const labels={critical:"救命センター",disaster:"災害拠点病院",ambulance1000:"救急車1000台以上",ambulance500:"救急車500台以上",hospital:"その他の病院",clinic:"診療所"};
- let x=[labels[primaryCategory(h)]];
+ let x=[];
+ if(h.type==="clinic"||h.clinic===true)x.push("診療所");
+ else{
+   if(h.critical)x.push("救命センター");
+   if(h.disaster)x.push("災害拠点病院");
+   if(Number(h.ambulance)>=1000)x.push("救急車1000台以上");
+   else if(Number(h.ambulance)>=500)x.push("救急車500台以上");
+   if(!h.critical&&!h.disaster&&!(Number(h.ambulance)>=500))x.push("その他の病院");
+ }
  if(h.ambulance!=null)x.push("救急車受入 "+Number(h.ambulance).toLocaleString()+"件/年（令和6年度）");
  return x.join(" / ");
 }
@@ -171,7 +189,7 @@ function markerRadius(h){
 function updateCounts(){
  const cats=["critical","disaster","ambulance1000","ambulance500","hospital","clinic"];
  const counts={all:hospitals.length};
- cats.forEach(cat=>counts[cat]=hospitals.filter(h=>primaryCategory(h)===cat).length);
+ cats.forEach(cat=>counts[cat]=hospitals.filter(h=>belongsToCategory(h,cat)).length);
  Object.entries(counts).forEach(([k,v])=>{const el=document.getElementById("count-"+k);if(el)el.textContent=v});
 }
 function drawHospitals(){
