@@ -18,8 +18,12 @@ label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px} select,
 select,input{width:100%;padding:8px;border-radius:7px;border:1px solid #374151;background:#111827;color:var(--text)}
 button{border:1px solid #3b82f6;background:#1d4ed8;color:white;padding:8px 10px;border-radius:7px;cursor:pointer}
 button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8px}.row>*{flex:1}
-.filters{display:flex;gap:6px;flex-wrap:wrap}.filters label{display:flex;align-items:center;gap:5px;background:#111827;border:1px solid #374151;padding:6px 8px;border-radius:7px;color:var(--text)}
-.filters input{width:auto}.small{font-size:11px;color:var(--muted);line-height:1.45}
+.tabs{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:8px}
+.tab{display:flex;align-items:center;justify-content:space-between;gap:6px;width:100%;background:#111827;border:1px solid #374151;color:var(--text);padding:9px 10px;border-radius:9px;font-size:12px;text-align:left}
+.tab:hover{border-color:#60a5fa}.tab.active{background:#1d4ed8;border-color:#60a5fa;color:#fff}
+.tab .count{min-width:22px;text-align:center;background:rgba(255,255,255,.12);padding:2px 6px;border-radius:999px;font-size:10px}
+.tab.all{grid-column:1/-1}
+.small{font-size:11px;color:var(--muted);line-height:1.45}
 #results{display:flex;flex-direction:column;gap:7px}
 .hospital{border:1px solid #334155;background:#0b1324;border-radius:9px;padding:9px;cursor:pointer}
 .hospital:hover{border-color:#60a5fa}.hospital .name{font-weight:700;font-size:13px}.candidate{border:1px solid #334155;background:#0b1324;border-radius:8px;padding:8px;margin-top:6px;cursor:pointer;font-size:12px}.candidate:hover{border-color:#60a5fa}.candidate .ctitle{font-weight:700}.candidate .cmeta{font-size:11px;color:#9ca3af;margin-top:2px}.hospital .meta{font-size:11px;color:#aab2bf;margin-top:3px}
@@ -52,13 +56,17 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 </div>
 
 <div class="card">
-<label>2. 表示する医療機関</label>
-<div class="filters">
-<label><input type="checkbox" id="fCritical" checked>救命救急</label>
-<label><input type="checkbox" id="fDisaster" checked>災害拠点</label>
-<label><input type="checkbox" id="fSecondary" checked>二次救急</label>
+<label>2. 医療機関タブ</label>
+<div class="tabs" id="categoryTabs">
+<button class="tab all active" data-category="all">すべて表示 <span class="count" id="count-all">0</span></button>
+<button class="tab" data-category="critical">🔴 救命センター <span class="count" id="count-critical">0</span></button>
+<button class="tab" data-category="disaster">🟠 災害拠点病院 <span class="count" id="count-disaster">0</span></button>
+<button class="tab" data-category="ambulance1000">🟡 救急車1000台以上 <span class="count" id="count-ambulance1000">0</span></button>
+<button class="tab" data-category="ambulance500">🔵 救急車500台以上 <span class="count" id="count-ambulance500">0</span></button>
+<button class="tab" data-category="hospital">⚪ その他の病院 <span class="count" id="count-hospital">0</span></button>
+<button class="tab" data-category="clinic">🟢 診療所 <span class="count" id="count-clinic">0</span></button>
 </div>
-<div class="small" style="margin-top:7px">複数区分に該当する病院は重複表示せず、属性を併記します。</div>
+<div class="small" style="margin-top:7px">タブを押すと該当施設だけを表示します。複数区分に該当する施設は「救命センター → 災害拠点病院 → 救急車受入台数」の順で優先分類します。</div>
 </div>
 
 <div class="card">
@@ -101,9 +109,12 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 
 <div class="card">
 <div class="legend">
-<span class="dot" style="background:#ef4444"></span>救命救急　
-<span class="dot" style="background:#f59e0b"></span>災害拠点　
-<span class="dot" style="background:#3b82f6"></span>二次救急
+<span class="dot" style="background:#ef4444"></span>救命センター　
+<span class="dot" style="background:#f59e0b"></span>災害拠点病院　
+<span class="dot" style="background:#facc15"></span>救急車1000台以上　
+<span class="dot" style="background:#3b82f6"></span>救急車500台以上　
+<span class="dot" style="background:#94a3b8"></span>その他の病院　
+<span class="dot" style="background:#22c55e"></span>診療所
 </div>
 </div>
 
@@ -158,24 +169,54 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 }).addTo(map);
 
 let incident=null,incidentMarker=null,routeLayer=null;
+let activeCategory="all";
 const hospitalLayers=new Map();
-function iconColor(h){return h.critical?'#ef4444':h.disaster?'#f59e0b':'#3b82f6'}
-function visible(h){
- return (h.critical&&fCritical.checked)||(h.disaster&&fDisaster.checked)||(h.secondary&&fSecondary.checked);
+
+function primaryCategory(h){
+ if(h.type==="clinic"||h.clinic===true)return "clinic";
+ if(h.critical)return "critical";
+ if(h.disaster)return "disaster";
+ if(Number(h.ambulance)>=1000)return "ambulance1000";
+ if(Number(h.ambulance)>=500)return "ambulance500";
+ return "hospital";
 }
+function iconColor(h){
+ const cat=primaryCategory(h);
+ return {critical:"#ef4444",disaster:"#f59e0b",ambulance1000:"#facc15",ambulance500:"#3b82f6",hospital:"#94a3b8",clinic:"#22c55e"}[cat]||"#94a3b8";
+}
+function visible(h){return activeCategory==="all"||primaryCategory(h)===activeCategory}
 function catText(h){
- let x=[]; if(h.critical)x.push("救命救急"); if(h.disaster)x.push("災害拠点"); if(h.secondary)x.push("二次救急"); return x.join(" / ");
+ const labels={critical:"救命センター",disaster:"災害拠点病院",ambulance1000:"救急車1000台以上",ambulance500:"救急車500台以上",hospital:"その他の病院",clinic:"診療所"};
+ let x=[labels[primaryCategory(h)]];
+ if(h.ambulance)x.push("救急車受入 "+Number(h.ambulance).toLocaleString()+"台/年");
+ return x.join(" / ");
+}
+function updateCounts(){
+ const cats=["critical","disaster","ambulance1000","ambulance500","hospital","clinic"];
+ const counts={all:hospitals.length};
+ cats.forEach(cat=>counts[cat]=hospitals.filter(h=>primaryCategory(h)===cat).length);
+ Object.entries(counts).forEach(([k,v])=>{const el=document.getElementById("count-"+k);if(el)el.textContent=v});
 }
 function drawHospitals(){
  hospitalLayers.forEach(x=>map.removeLayer(x));hospitalLayers.clear();
  hospitals.forEach((h,i)=>{
    if(!visible(h))return;
-   const m=L.circleMarker([h.lat,h.lng],{radius:h.critical?8:6,color:"#fff",weight:1,fillColor:iconColor(h),fillOpacity:.95})
+   const m=L.circleMarker([h.lat,h.lng],{radius:primaryCategory(h)==="critical"?8:6,color:"#fff",weight:1,fillColor:iconColor(h),fillOpacity:.95})
      .addTo(map).bindPopup(`<b>${h.name}</b><br>${catText(h)}<br>${h.area}`);
    hospitalLayers.set(i,m);
  });
 }
+updateCounts();
 drawHospitals();
+document.querySelectorAll("#categoryTabs .tab").forEach(btn=>{
+ btn.onclick=()=>{
+   activeCategory=btn.dataset.category;
+   document.querySelectorAll("#categoryTabs .tab").forEach(x=>x.classList.toggle("active",x===btn));
+   if(routeLayer){map.removeLayer(routeLayer);routeLayer=null}
+   roadTimes={};roadDistances={};
+   drawHospitals();renderResults();
+ };
+});
 
 function setIncident(lat,lng){
  incident={lat,lng};
@@ -247,7 +288,6 @@ document.getElementById("addressInput").addEventListener("keydown",e=>{if(e.key=
 
 geoBtn.onclick=()=>navigator.geolocation?.getCurrentPosition(p=>{setIncident(p.coords.latitude,p.coords.longitude);map.setView([p.coords.latitude,p.coords.longitude],12)},()=>alert("現在地を取得できませんでした。"));
 clearBtn.onclick=()=>{incident=null;if(incidentMarker)map.removeLayer(incidentMarker);incidentMarker=null;incidentText.textContent="未設定";results.innerHTML="";status.textContent="";if(routeLayer)map.removeLayer(routeLayer)};
-[fCritical,fDisaster,fSecondary].forEach(x=>x.onchange=()=>{drawHospitals();renderResults();});
 [airSpeed,airOverhead].forEach(x=>x.oninput=renderResults);
 sortMode.onchange=renderResults;
 if(window.routeDirection)routeDirection.onchange=()=>{roadTimes={};roadDistances={};renderResults();status.textContent="方向を変更しました。陸路を再計算してください。";};
