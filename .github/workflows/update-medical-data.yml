@@ -22,7 +22,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install parser dependency
-        run: pip install openpyxl
+        run: pip install openpyxl pypdf
       - name: Build Fukushima medical dataset
         run: python scripts/build_medical_data.py
       - name: Commit generated data
