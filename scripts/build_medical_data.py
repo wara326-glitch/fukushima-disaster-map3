@@ -34,7 +34,7 @@ DISASTER = [
 def norm(s):
     s = (s or "").replace("\u3000"," ").strip()
     s = re.sub(r"\s+", "", s)
-    s = s.replace("―","ー").replace("－","ー").replace("ｰ","ー")
+    s = s.replace("―","ー").replace("－","ー").replace("ｰ","ー").replace("ヶ","ケ").replace("ヵ","カ")
     for t in ["公立大学法人","一般財団法人","公益財団法人","医療法人","社団法人","独立行政法人","福島県厚生農業協同組合連合会","一般財団法人脳神経疾患研究所附属","一般財団法人太田綜合病院附属","一般財団法人温知会"]:
         s = s.replace(t, "")
     return s
@@ -252,7 +252,7 @@ def merge_clinic_specialties(clinics,specmap):
     return {"matched_clinics":matched,"unmatched_clinics":len(clinics)-matched}
 
 
-def inspect_hospital_pdf():
+def parse_hospital_pdf_phones(hospitals):
     blob=download(HOSPITAL_LIST_PDF_URL)
     reader=PdfReader(io.BytesIO(blob))
     pages=[]
@@ -262,7 +262,41 @@ def inspect_hospital_pdf():
         except TypeError:
             txt=p.extract_text()
         pages.append(txt or "")
-    return {"pages":len(pages),"sample":pages[0][:5000] if pages else ""}
+    page_lines=[p.splitlines() for p in pages]
+    phone_re=re.compile(r"\(0\d{1,4}\)[\s　]*\d{1,4}-\d{2,4}")
+    matched=[]
+    unmatched=[]
+    for h in hospitals:
+        target=norm(h["name"])
+        candidates=[]
+        for pi,lines in enumerate(page_lines):
+            for i in range(len(lines)):
+                # Hospital names in the official PDF may span several lines.
+                window=lines[i:i+5]
+                nwin=norm("".join(window))
+                if target and target in nwin:
+                    phones=[]
+                    for offset,line in enumerate(window):
+                        for m in phone_re.finditer(line):
+                            phones.append((offset,m.start(),m.group()))
+                    if phones:
+                        phones.sort()
+                        # Prefer a phone on the same/earliest hospital-name line.
+                        phone=phones[0][2]
+                        phone=re.sub(r"[\s　]+"," ",phone).strip()
+                        candidates.append((pi,i,phone))
+        if candidates:
+            candidates.sort()
+            h["phone"]=candidates[0][2]
+            h["phone_source"]="福島県 県内病院一覧（令和8年1月1日現在）"
+            matched.append(h["name"])
+        else:
+            unmatched.append(h["name"])
+    return {
+        "pages":len(pages),
+        "matched_hospitals":len(matched),
+        "unmatched_hospitals":unmatched,
+    }
 
 def parse_bed_report():
     blob = download(BED_REPORT_URL)
@@ -382,7 +416,7 @@ def main():
     specmap, spec_meta = parse_clinic_specialties(unzip_csv(download(CLINIC_SPECIALTY_URL)))
     spec_merge = merge_clinic_specialties(clinics, specmap)
     coord_meta = geocode_missing_coordinates(hospitals+clinics)
-    hospital_pdf_meta=inspect_hospital_pdf()
+    hospital_pdf_meta=parse_hospital_pdf_phones(hospitals)
     bed_rows, bed_meta=parse_bed_report()
     merge_meta=merge_ambulance_counts(hospitals, bed_rows)
     facilities=hospitals+clinics
