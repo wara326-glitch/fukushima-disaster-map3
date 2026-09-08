@@ -41,10 +41,10 @@ def norm(s):
 
 def norm_addr(s):
     s=unicodedata.normalize("NFKC",(s or ""))
-    for t in ["福島県","〒","大字","字","番地","番","号"]:
+    for t in ["福島県","〒","大字","番地","丁目","番","号"]:
         s=s.replace(t,"")
-    s=s.replace("―","-").replace("－","-").replace("ー","-")
-    s=re.sub(r"\s+","",s)
+    s=s.replace("―","").replace("－","").replace("ー","").replace("-","").replace("‐","").replace("−","")
+    s=re.sub(r"[\s　,，.．・/／()（）]+","",s)
     return s
 
 def matches(name, targets):
