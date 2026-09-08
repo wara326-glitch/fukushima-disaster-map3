@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import csv, io, json, os, re, sys, urllib.request, zipfile
+import csv, io, json, os, re, sys, urllib.request, urllib.parse, zipfile
 from openpyxl import load_workbook
 from pathlib import Path
 
@@ -200,7 +200,7 @@ def parse_clinic_specialties(text):
         ("整形外科",["整形外科"]),
         ("産婦人科",["産婦人科","産科","婦人科"]),
         ("眼科",["眼科"]),
-        ("耳鼻科",["耳鼻咽喉科","耳鼻科"]),
+        ("耳鼻科",["耳鼻咽喉科","耳鼻いんこう科","耳鼻科"]),
         ("精神科",["精神科","心療内科"]),
         ("皮膚科",["皮膚科"]),
         ("泌尿器科",["泌尿器科"]),
@@ -297,27 +297,61 @@ def parse_bed_report():
     }
 
 def merge_ambulance_counts(hospitals, bed_rows):
-    exact={norm(x["name"]):x for x in bed_rows}
+    # Strict normalized-name matching only. Fuzzy substring matching can
+    # incorrectly copy one hospital's ambulance count to another hospital.
+    by_name={}
+    duplicates=set()
+    for row in bed_rows:
+        k=norm(row["name"])
+        if k in by_name:
+            duplicates.add(k)
+        by_name[k]=row
     matched=0
     unmatched=[]
+    ambiguous=[]
     for h in hospitals:
         hn=norm(h["name"])
-        hit=exact.get(hn)
-        if not hit:
-            candidates=[]
-            for bn,row in exact.items():
-                if min(len(hn),len(bn)) >= 6 and (hn in bn or bn in hn):
-                    candidates.append((abs(len(hn)-len(bn)),row))
-            if candidates:
-                candidates.sort(key=lambda z:z[0])
-                hit=candidates[0][1]
+        hit=None if hn in duplicates else by_name.get(hn)
         if hit:
             h["ambulance"]=hit.get("ambulance")
             h["bed_report_name"]=hit.get("name")
             matched+=1
         else:
-            unmatched.append(h["name"])
-    return {"matched_hospitals":matched,"unmatched_hospitals":unmatched}
+            h["ambulance"]=None
+            if hn in duplicates:
+                ambiguous.append(h["name"])
+            else:
+                unmatched.append(h["name"])
+    return {"matched_hospitals":matched,"unmatched_hospitals":unmatched,"ambiguous_hospitals":ambiguous}
+
+def geocode_missing_coordinates(facilities):
+    fixed=[]
+    failed=[]
+    for h in facilities:
+        lat=h.get("lat"); lng=h.get("lng")
+        valid=(lat is not None and lng is not None and 36.7 <= lat <= 38.1 and 139.1 <= lng <= 141.2)
+        if valid:
+            continue
+        q=h.get("address") or ""
+        if not q:
+            failed.append(h["name"])
+            continue
+        try:
+            url="https://nominatim.openstreetmap.org/search?format=jsonv2&countrycodes=jp&limit=1&q="+urllib.parse.quote(q)
+            req=urllib.request.Request(url,headers={"User-Agent":"fukushima-disaster-map3-audit/1.0"})
+            with urllib.request.urlopen(req,timeout=20) as r:
+                arr=json.loads(r.read().decode("utf-8"))
+            if arr:
+                glat=float(arr[0]["lat"]); glng=float(arr[0]["lon"])
+                if 36.7 <= glat <= 38.1 and 139.1 <= glng <= 141.2:
+                    h["lat"]=glat; h["lng"]=glng
+                    h["coordinate_source"]="OpenStreetMap fallback"
+                    fixed.append(h["name"])
+                    continue
+        except Exception:
+            pass
+        failed.append(h["name"])
+    return {"fixed":fixed,"failed":failed}
 
 def category(x):
     if x["type"]=="clinic": return "clinic"
@@ -333,6 +367,7 @@ def main():
     clinics, cm = parse_facilities(unzip_csv(download(CLINIC_URL)), "clinic")
     specmap, spec_meta = parse_clinic_specialties(unzip_csv(download(CLINIC_SPECIALTY_URL)))
     spec_merge = merge_clinic_specialties(clinics, specmap)
+    coord_meta = geocode_missing_coordinates(hospitals+clinics)
     bed_rows, bed_meta=parse_bed_report()
     merge_meta=merge_ambulance_counts(hospitals, bed_rows)
     facilities=hospitals+clinics
@@ -355,7 +390,21 @@ def main():
         [{"name":h["name"],"ambulance":h.get("ambulance"),"category":h.get("category")} for h in hospitals if h.get("ambulance") is not None],
         key=lambda x:x["ambulance"], reverse=True
     )
-    meta={"hospital":hm,"clinic":cm,"clinic_specialty":spec_meta,"clinic_specialty_merge":spec_merge,"bed_report":bed_meta,"merge":merge_meta,"counts":counts,"ambulance_rank":ambulance_rank}
+    specialty_names=["内科","外科","小児科","整形外科","産婦人科","眼科","耳鼻科","精神科","皮膚科","泌尿器科"]
+    audit={
+        "facility_total":len(facilities),
+        "hospital_total":len(hospitals),
+        "clinic_total":len(clinics),
+        "duplicate_source_ids":len(facilities)-len(set((x.get("source_id"),x.get("type")) for x in facilities)),
+        "invalid_coordinates":[x["name"] for x in facilities if not (36.7 <= x.get("lat",0) <= 38.1 and 139.1 <= x.get("lng",0) <= 141.2)],
+        "missing_hospital_phones":[x["name"] for x in hospitals if not x.get("phone")],
+        "specialty_counts":{s:sum(1 for x in clinics if s in (x.get("specialties") or [])) for s in specialty_names},
+        "critical_count":sum(1 for x in hospitals if x.get("critical")),
+        "disaster_count":sum(1 for x in hospitals if x.get("disaster")),
+        "ambulance_1000_count":sum(1 for x in hospitals if (x.get("ambulance") or 0)>=1000),
+        "ambulance_500_999_count":sum(1 for x in hospitals if 500 <= (x.get("ambulance") or 0) < 1000),
+    }
+    meta={"hospital":hm,"clinic":cm,"clinic_specialty":spec_meta,"clinic_specialty_merge":spec_merge,"coordinate_fallback":coord_meta,"bed_report":bed_meta,"merge":merge_meta,"counts":counts,"ambulance_rank":ambulance_rank,"audit":audit}
     Path("data/build-meta.json").write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding="utf-8")
     print(json.dumps(meta, ensure_ascii=False, indent=2))
 
