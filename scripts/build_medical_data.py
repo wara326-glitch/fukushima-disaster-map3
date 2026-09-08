@@ -88,7 +88,8 @@ def parse_facilities(text, kind):
     lon_col = first_matching(headers, [("経度",)])
     pref_cols = [h for h in headers if "都道府県" in h]
     city_col = first_matching(headers, [("市区町村",),("市町村",)])
-    address_cols = [h for h in headers if any(x in h for x in ["所在地","町名","番地","住所"]) and "英語" not in h]
+    address_col = next((h for h in headers if h.strip()=="所在地"), None)
+    address_cols = [address_col] if address_col else [h for h in headers if ("住所" in h or "所在地" in h) and "座標" not in h and "英語" not in h]
     phone_col = first_matching(headers, [("電話番号",),("代表電話",)])
     ambulance_cols = [h for h in headers if "救急車" in h and any(x in h for x in ["搬送","受入","受け入れ","件数","患者"])]
     if not name_col:
@@ -122,13 +123,13 @@ def parse_facilities(text, kind):
         lat = to_num(row.get(lat_col)); lng = to_num(row.get(lon_col))
         if not name or lat is None or lng is None:
             continue
-        address_parts=[]
-        for c in pref_cols + ([city_col] if city_col else []) + address_cols:
-            if not c: continue
-            v=(row.get(c) or "").strip()
-            if v and v not in address_parts:
-                address_parts.append(v)
-        address="".join(address_parts)
+        address=""
+        for ac in address_cols:
+            if ac:
+                v=(row.get(ac) or "").strip()
+                if v:
+                    address=v
+                    break
         ambulance=None
         if kind=="hospital":
             vals=[to_num(row.get(c)) for c in ambulance_cols]
@@ -161,21 +162,73 @@ def parse_facilities(text, kind):
     }
 
 
-def inspect_bed_report():
+def parse_bed_report():
     blob = download(BED_REPORT_URL)
     wb = load_workbook(io.BytesIO(blob), read_only=True, data_only=True)
-    hits=[]
-    for ws in wb.worksheets:
-        for row in ws.iter_rows():
-            vals=[c.value for c in row]
-            for idx,v in enumerate(vals):
-                s="" if v is None else str(v)
-                if ("救急車" in s or "救急搬送" in s or "救急医療" in s) and len(hits)<80:
-                    lo=max(0,idx-4); hi=min(len(vals),idx+8)
-                    hits.append({"sheet":ws.title,"row":row[0].row,"col":idx+1,"value":s,"context":[None if x is None else str(x) for x in vals[lo:hi]]})
-    ws=wb[wb.sheetnames[0]]
-    row5=[ws.cell(5,i).value for i in range(1,min(ws.max_column,220)+1)]
-    return {"sheetnames":wb.sheetnames,"hits":hits,"row5":[None if v is None else str(v) for v in row5]}
+    ws = wb[wb.sheetnames[0]]
+    headers = [ws.cell(5,i).value for i in range(1, ws.max_column+1)]
+    def col(label):
+        for i,v in enumerate(headers, start=1):
+            if (str(v).strip() if v is not None else "") == label:
+                return i
+        return None
+    name_col = col("医療機関名")
+    pref_col = col("都道府県コード")
+    ambulance_col = col("救急車の受入件数")
+    tertiary_col = col("三次救急医療施設の認定の有無")
+    secondary_col = col("二次救急医療施設の認定の有無")
+    if not name_col or not pref_col or not ambulance_col:
+        raise RuntimeError("Required bed report columns not found")
+    rows=[]
+    for r in range(6, ws.max_row+1):
+        pref=ws.cell(r,pref_col).value
+        ps=str(pref).strip()
+        if ps.endswith(".0"): ps=ps[:-2]
+        if ps.zfill(2)!="07":
+            continue
+        name=str(ws.cell(r,name_col).value or "").strip()
+        if not name:
+            continue
+        aval=to_num(ws.cell(r,ambulance_col).value)
+        rows.append({
+            "name":name,
+            "ambulance":int(round(aval)) if aval is not None else None,
+            "tertiary":ws.cell(r,tertiary_col).value if tertiary_col else None,
+            "secondary":ws.cell(r,secondary_col).value if secondary_col else None,
+        })
+    return rows, {
+        "sheet":ws.title,
+        "name_col":name_col,
+        "pref_col":pref_col,
+        "ambulance_col":ambulance_col,
+        "tertiary_col":tertiary_col,
+        "secondary_col":secondary_col,
+        "fukushima_rows":len(rows),
+        "with_ambulance_count":sum(1 for x in rows if x["ambulance"] is not None),
+    }
+
+def merge_ambulance_counts(hospitals, bed_rows):
+    exact={norm(x["name"]):x for x in bed_rows}
+    matched=0
+    unmatched=[]
+    for h in hospitals:
+        hn=norm(h["name"])
+        hit=exact.get(hn)
+        if not hit:
+            candidates=[]
+            for bn,row in exact.items():
+                if min(len(hn),len(bn)) >= 6 and (hn in bn or bn in hn):
+                    candidates.append((abs(len(hn)-len(bn)),row))
+            if candidates:
+                candidates.sort(key=lambda z:z[0])
+                hit=candidates[0][1]
+        if hit:
+            h["ambulance"]=hit.get("ambulance")
+            h["bed_report_name"]=hit.get("name")
+            matched+=1
+        else:
+            unmatched.append(h["name"])
+    return {"matched_hospitals":matched,"unmatched_hospitals":unmatched}
 
 def category(x):
     if x["type"]=="clinic": return "clinic"
@@ -189,24 +242,31 @@ def category(x):
 def main():
     hospitals, hm = parse_facilities(unzip_csv(download(HOSPITAL_URL)), "hospital")
     clinics, cm = parse_facilities(unzip_csv(download(CLINIC_URL)), "clinic")
+    bed_rows, bed_meta=parse_bed_report()
+    merge_meta=merge_ambulance_counts(hospitals, bed_rows)
     facilities=hospitals+clinics
     for x in facilities:
         x["category"]=category(x)
     counts={}
     for x in facilities:
         counts[x["category"]]=counts.get(x["category"],0)+1
-    bed_meta=inspect_bed_report()
     payload={
         "source":"厚生労働省 医療情報ネット オープンデータ",
         "as_of":"2026-06-01",
-        "generated_from":{"hospital":HOSPITAL_URL,"clinic":CLINIC_URL},
+        "generated_from":{"hospital":HOSPITAL_URL,"clinic":CLINIC_URL,"bed_report":BED_REPORT_URL},
+        "ambulance_period":"2024-04-01/2025-03-31",
         "counts":counts,
         "facilities":facilities,
     }
     Path("data").mkdir(exist_ok=True)
     Path("data/fukushima_medical.json").write_text(json.dumps(payload, ensure_ascii=False, separators=(",",":")),encoding="utf-8")
-    Path("data/build-meta.json").write_text(json.dumps({"hospital":hm,"clinic":cm,"bed_report":bed_meta,"counts":counts},ensure_ascii=False,indent=2),encoding="utf-8")
-    print(json.dumps({"hospital":hm,"clinic":cm,"bed_report":bed_meta,"counts":counts}, ensure_ascii=False, indent=2))
+    ambulance_rank=sorted(
+        [{"name":h["name"],"ambulance":h.get("ambulance"),"category":h.get("category")} for h in hospitals if h.get("ambulance") is not None],
+        key=lambda x:x["ambulance"], reverse=True
+    )
+    meta={"hospital":hm,"clinic":cm,"bed_report":bed_meta,"merge":merge_meta,"counts":counts,"ambulance_rank":ambulance_rank}
+    Path("data/build-meta.json").write_text(json.dumps(meta,ensure_ascii=False,indent=2),encoding="utf-8")
+    print(json.dumps(meta, ensure_ascii=False, indent=2))
 
 if __name__=="__main__":
     main()
