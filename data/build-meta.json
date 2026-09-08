@@ -272,19 +272,12 @@
   },
   "hospital_pdf": {
     "pages": 7,
-    "matched_hospitals": 112,
-    "unmatched_hospitals": [
-      "公立小野町地方綜合病院",
-      "医療法人社団青秀会　車田病院",
-      "医療法人社団養高会　高野病院",
-      "（医）社団石福会四倉病院",
-      "（医）泉心会泉保養院",
-      "社団（医）養生会かしま病院",
-      "福島県ふたば医療センター附属病院"
-    ],
+    "matched_hospitals": 119,
+    "unmatched_hospitals": [],
     "match_modes": {
       "name": 57,
-      "address": 55
+      "address": 55,
+      "official_override": 7
     }
   },
   "bed_report": {
@@ -795,15 +788,7 @@
       "医療法人恒伸会　みずたに耳鼻咽喉科医院",
       "医療法人なこそ整形外科クリニック"
     ],
-    "missing_hospital_phones": [
-      "公立小野町地方綜合病院",
-      "医療法人社団青秀会　車田病院",
-      "医療法人社団養高会　高野病院",
-      "（医）社団石福会四倉病院",
-      "（医）泉心会泉保養院",
-      "社団（医）養生会かしま病院",
-      "福島県ふたば医療センター附属病院"
-    ],
+    "missing_hospital_phones": [],
     "specialty_counts": {
       "内科": 666,
       "外科": 279,
