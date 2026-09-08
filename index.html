@@ -64,7 +64,17 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 <button class="tab" data-category="ambulance1000">🟡 救急車1000台以上 <span class="count" id="count-ambulance1000">0</span></button>
 <button class="tab" data-category="ambulance500">🔵 救急車500台以上 <span class="count" id="count-ambulance500">0</span></button>
 <button class="tab" data-category="hospital">⚪ その他の病院 <span class="count" id="count-hospital">0</span></button>
-<button class="tab" data-category="clinic">🟢 診療所 <span class="count" id="count-clinic">0</span></button>
+<button class="tab" data-category="clinic">🟢 診療所（全科） <span class="count" id="count-clinic">0</span></button>
+<button class="tab" data-category="clinic-internal">内科 <span class="count" id="count-clinic-internal">0</span></button>
+<button class="tab" data-category="clinic-surgery">外科 <span class="count" id="count-clinic-surgery">0</span></button>
+<button class="tab" data-category="clinic-pediatrics">小児科 <span class="count" id="count-clinic-pediatrics">0</span></button>
+<button class="tab" data-category="clinic-orthopedics">整形外科 <span class="count" id="count-clinic-orthopedics">0</span></button>
+<button class="tab" data-category="clinic-obgyn">産婦人科 <span class="count" id="count-clinic-obgyn">0</span></button>
+<button class="tab" data-category="clinic-ophthalmology">眼科 <span class="count" id="count-clinic-ophthalmology">0</span></button>
+<button class="tab" data-category="clinic-ent">耳鼻科 <span class="count" id="count-clinic-ent">0</span></button>
+<button class="tab" data-category="clinic-psychiatry">精神科 <span class="count" id="count-clinic-psychiatry">0</span></button>
+<button class="tab" data-category="clinic-dermatology">皮膚科 <span class="count" id="count-clinic-dermatology">0</span></button>
+<button class="tab" data-category="clinic-urology">泌尿器科 <span class="count" id="count-clinic-urology">0</span></button>
 </div>
 <div class="small" style="margin-top:7px">タブは複数同時に選択できます。選択したカテゴリーのいずれかに該当する施設をまとめて表示します。「すべて表示」を押すと選択状態をリセットして全施設を表示します。複数区分に該当する施設は、それぞれ該当するタブに表示されます。</div>
 </div>
@@ -114,7 +124,7 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 <span class="dot" style="background:#facc15"></span>救急車1000台以上　
 <span class="dot" style="background:#3b82f6"></span>救急車500台以上　
 <span class="dot" style="background:#94a3b8"></span>その他の病院　
-<span class="dot" style="background:#22c55e"></span>診療所
+<span class="dot" style="background:#22c55e"></span>診療所（診療科別選択可）
 </div>
 </div>
 
@@ -161,6 +171,15 @@ function iconColor(h){
 function belongsToCategory(h,cat){
  if(cat==="all")return true;
  if(cat==="clinic")return h.type==="clinic"||h.clinic===true;
+ if(cat.startsWith("clinic-")){
+   if(!(h.type==="clinic"||h.clinic===true))return false;
+   const spec={
+     "clinic-internal":"内科","clinic-surgery":"外科","clinic-pediatrics":"小児科",
+     "clinic-orthopedics":"整形外科","clinic-obgyn":"産婦人科","clinic-ophthalmology":"眼科",
+     "clinic-ent":"耳鼻科","clinic-psychiatry":"精神科","clinic-dermatology":"皮膚科","clinic-urology":"泌尿器科"
+   }[cat];
+   return (h.specialties||[]).includes(spec);
+ }
  if(h.type==="clinic"||h.clinic===true)return false;
  if(cat==="critical")return !!h.critical;
  if(cat==="disaster")return !!h.disaster;
@@ -178,7 +197,10 @@ function visible(h){
 }
 function catText(h){
  let x=[];
- if(h.type==="clinic"||h.clinic===true)x.push("診療所");
+ if(h.type==="clinic"||h.clinic===true){
+   x.push("診療所");
+   if((h.specialties||[]).length)x.push((h.specialties||[]).join("・"));
+ }
  else{
    if(h.critical)x.push("救命センター");
    if(h.disaster)x.push("災害拠点病院");
@@ -194,7 +216,7 @@ function markerRadius(h){
  return cat==="critical"?8:cat==="clinic"?3.5:cat==="hospital"?4.5:6;
 }
 function updateCounts(){
- const cats=["critical","disaster","ambulance1000","ambulance500","hospital","clinic"];
+ const cats=["critical","disaster","ambulance1000","ambulance500","hospital","clinic","clinic-internal","clinic-surgery","clinic-pediatrics","clinic-orthopedics","clinic-obgyn","clinic-ophthalmology","clinic-ent","clinic-psychiatry","clinic-dermatology","clinic-urology"];
  const counts={all:hospitals.length};
  cats.forEach(cat=>counts[cat]=hospitals.filter(h=>belongsToCategory(h,cat)).length);
  Object.entries(counts).forEach(([k,v])=>{const el=document.getElementById("count-"+k);if(el)el.textContent=v});
