@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>福島県 局地災害 医療アクセスマップ</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root{--bg:#0b1220;--panel:#111827;--line:#263244;--text:#e5e7eb;--muted:#9ca3af;--accent:#60a5fa;--red:#f87171;--amber:#fbbf24;--green:#34d399}
+*{box-sizing:border-box} body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;background:var(--bg);color:var(--text)}
+header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+h1{font-size:18px;margin:0}.badge{font-size:11px;background:#1f2937;border:1px solid #374151;padding:3px 7px;border-radius:999px}
+.app{display:grid;grid-template-columns:360px 1fr;height:calc(100vh - 54px)}
+aside{overflow:auto;border-right:1px solid var(--line);background:var(--panel);padding:12px}
+#map{height:100%;width:100%}
+.card{background:#0f172a;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:10px}
+label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px} select,input,button{font:inherit}
+select,input{width:100%;padding:8px;border-radius:7px;border:1px solid #374151;background:#111827;color:var(--text)}
+button{border:1px solid #3b82f6;background:#1d4ed8;color:white;padding:8px 10px;border-radius:7px;cursor:pointer}
+button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8px}.row>*{flex:1}
+.filters{display:flex;gap:6px;flex-wrap:wrap}.filters label{display:flex;align-items:center;gap:5px;background:#111827;border:1px solid #374151;padding:6px 8px;border-radius:7px;color:var(--text)}
+.filters input{width:auto}.small{font-size:11px;color:var(--muted);line-height:1.45}
+#results{display:flex;flex-direction:column;gap:7px}
+.hospital{border:1px solid #334155;background:#0b1324;border-radius:9px;padding:9px;cursor:pointer}
+.hospital:hover{border-color:#60a5fa}.hospital .name{font-weight:700;font-size:13px}.candidate{border:1px solid #334155;background:#0b1324;border-radius:8px;padding:8px;margin-top:6px;cursor:pointer;font-size:12px}.candidate:hover{border-color:#60a5fa}.candidate .ctitle{font-weight:700}.candidate .cmeta{font-size:11px;color:#9ca3af;margin-top:2px}.hospital .meta{font-size:11px;color:#aab2bf;margin-top:3px}
+.times{display:flex;gap:6px;margin-top:7px}.pill{font-size:11px;padding:4px 6px;border-radius:6px;background:#1f2937}
+.pill.road{border:1px solid #60a5fa}.pill.air{border:1px solid #34d399}
+.legend{font-size:11px;color:#cbd5e1}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+@media(max-width:850px){.app{grid-template-columns:1fr;grid-template-rows:48vh 52vh}aside{grid-row:2;border-right:none;border-top:1px solid var(--line)}#map{grid-row:1}}
+</style>
+</head>
+<body>
+<header>
+<h1>福島県 局地災害 医療アクセスマップ</h1>
+<span class="badge">現場 ↔ 病院</span><span class="badge">陸路 / 空路</span>
+</header>
+<div class="app">
+<aside>
+<div class="card">
+<label>1. 発災地点</label>
+<div class="small">住所・施設名を入力するか、地図をクリックして指定してください。</div>
+<div class="row" style="margin-top:8px">
+<input id="addressInput" type="text" placeholder="例：福島県庁、総合南東北病院、郡山駅、イオン郡山フェスタ店">
+<button id="addressBtn" style="flex:0 0 auto">地点検索</button>
+</div>
+<div class="small" style="margin-top:5px">住所、病院、店舗、薬局、学校、駅、役所などを検索できます。Enterキーでも検索できます。</div>
+<div id="searchCandidates" style="display:none;margin-top:8px"></div>
+<div id="incidentText" style="margin-top:7px;font-size:12px">未設定</div>
+<div class="row" style="margin-top:8px">
+<button id="geoBtn">現在地を使用</button><button class="secondary" id="clearBtn">解除</button>
+</div>
+</div>
+
+<div class="card">
+<label>2. 表示する医療機関</label>
+<div class="filters">
+<label><input type="checkbox" id="fCritical" checked>救命救急</label>
+<label><input type="checkbox" id="fDisaster" checked>災害拠点</label>
+<label><input type="checkbox" id="fSecondary" checked>二次救急</label>
+</div>
+<div class="small" style="margin-top:7px">複数区分に該当する病院は重複表示せず、属性を併記します。</div>
+</div>
+
+<div class="card">
+<label>3. 空路推定設定</label>
+<div class="row">
+<div><label>巡航速度 km/h</label><input id="airSpeed" type="number" value="220" min="80" max="350"></div>
+<div><label>固定加算 分</label><input id="airOverhead" type="number" value="5" min="0" max="60"></div>
+</div>
+<div class="small" style="margin-top:7px">空路は病院―現場の直線距離から算出。実際の飛行可否・離着陸場・天候・管制・立上げ時間は別途判断。</div>
+</div>
+
+<div class="card">
+<div class="row">
+<button id="calcBtn">陸路・空路を計算</button>
+<select id="sortMode">
+<option value="road">陸路時間順</option>
+<option value="air">空路時間順</option>
+<option value="distance">直線距離順</option>
+</select>
+</div>
+<div class="row" style="margin-top:8px">
+<div>
+<label>陸路方向</label>
+<select id="routeDirection">
+<option value="incidentToHospital">現場 → 病院</option>
+<option value="hospitalToIncident">病院 → 現場</option>
+</select>
+</div>
+<div>
+<label>陸路計算対象</label>
+<select id="roadLimit">
+<option value="all">表示中の全病院</option>
+<option value="10">近い10病院</option>
+<option value="5">近い5病院</option>
+</select>
+</div>
+</div>
+<div class="small" style="margin-top:7px">陸路は公開OSRMルーティングサービスを利用するため、インターネット接続が必要です。</div>
+</div>
+
+<div class="card">
+<div class="legend">
+<span class="dot" style="background:#ef4444"></span>救命救急　
+<span class="dot" style="background:#f59e0b"></span>災害拠点　
+<span class="dot" style="background:#3b82f6"></span>二次救急
+</div>
+</div>
+
+<div id="status" class="small" style="margin:6px 2px"></div>
+<div id="results"></div>
+
+<div class="card small" style="margin-top:10px">
+<b>データについて</b><br>
+初期データは福島県の公開情報をもとにした実証用スターターセットです。正式運用時は県・消防・医師会で確定した二次救急医療機関マスタ、受入可否、ヘリポート情報、通行止め情報等への置換を想定しています。
+</div>
+</aside>
+<div id="map"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// 実証用スターターセット。
+// 正式運用では県公式マスタ（CSV/GeoJSON/API）へ差替え推奨。
+const hospitals = [
+{name:"福島県立医科大学附属病院",lat:37.6896,lng:140.4726,critical:true,disaster:true,secondary:false,area:"県北"},
+{name:"福島赤十字病院",lat:37.7693,lng:140.4806,critical:false,disaster:true,secondary:true,area:"県北"},
+{name:"大原綜合病院",lat:37.7554,lng:140.4610,critical:false,disaster:false,secondary:true,area:"県北"},
+{name:"済生会福島総合病院",lat:37.7332,lng:140.4568,critical:false,disaster:false,secondary:true,area:"県北"},
+{name:"公立藤田総合病院",lat:37.8763,lng:140.5502,critical:false,disaster:true,secondary:true,area:"県北"},
+{name:"枡記念病院",lat:37.5907,lng:140.4304,critical:false,disaster:true,secondary:true,area:"県北"},
+{name:"太田西ノ内病院",lat:37.4074,lng:140.3678,critical:true,disaster:true,secondary:true,area:"県中"},
+{name:"総合南東北病院",lat:37.4213,lng:140.3835,critical:false,disaster:true,secondary:true,area:"県中"},
+{name:"星総合病院",lat:37.3997,lng:140.3927,critical:false,disaster:false,secondary:true,area:"県中"},
+{name:"寿泉堂綜合病院",lat:37.3960,lng:140.3847,critical:false,disaster:false,secondary:true,area:"県中"},
+{name:"公立岩瀬病院",lat:37.2898,lng:140.3727,critical:false,disaster:true,secondary:true,area:"県中"},
+{name:"須賀川病院",lat:37.2849,lng:140.3723,critical:false,disaster:false,secondary:true,area:"県中"},
+{name:"ひらた中央病院",lat:37.2260,lng:140.5740,critical:false,disaster:false,secondary:true,area:"県中"},
+{name:"白河厚生総合病院",lat:37.1395,lng:140.2141,critical:false,disaster:true,secondary:true,area:"県南"},
+{name:"会津中央病院",lat:37.5085,lng:139.9490,critical:true,disaster:true,secondary:true,area:"会津"},
+{name:"竹田綜合病院",lat:37.4940,lng:139.9248,critical:false,disaster:true,secondary:true,area:"会津"},
+{name:"福島県立医科大学会津医療センター",lat:37.5570,lng:139.8758,critical:false,disaster:true,secondary:true,area:"会津"},
+{name:"福島県立南会津病院",lat:37.2058,lng:139.7736,critical:false,disaster:true,secondary:true,area:"南会津"},
+{name:"いわき市医療センター",lat:37.0636,lng:140.8907,critical:true,disaster:true,secondary:true,area:"いわき"},
+{name:"福島労災病院",lat:37.0503,lng:140.8948,critical:false,disaster:true,secondary:true,area:"いわき"},
+{name:"松村総合病院",lat:37.0569,lng:140.8897,critical:false,disaster:false,secondary:true,area:"いわき"},
+{name:"かしま病院",lat:36.9960,lng:140.9014,critical:false,disaster:false,secondary:true,area:"いわき"},
+{name:"呉羽総合病院",lat:36.9494,lng:140.8624,critical:false,disaster:false,secondary:true,area:"いわき"},
+{name:"南相馬市立総合病院",lat:37.6380,lng:140.9577,critical:false,disaster:true,secondary:true,area:"相双"},
+{name:"公立相馬総合病院",lat:37.8008,lng:140.9163,critical:false,disaster:true,secondary:true,area:"相双"},
+{name:"双葉医療センター附属病院",lat:37.4520,lng:141.0143,critical:false,disaster:false,secondary:true,area:"相双"},
+{name:"ふたば医療センター附属病院",lat:37.4520,lng:141.0143,critical:false,disaster:false,secondary:true,area:"相双"}
+];
+
+const map=L.map('map',{zoomControl:true}).setView([37.40,140.30],9);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+ maxZoom:19, attribution:'&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+let incident=null,incidentMarker=null,routeLayer=null;
+const hospitalLayers=new Map();
+function iconColor(h){return h.critical?'#ef4444':h.disaster?'#f59e0b':'#3b82f6'}
+function visible(h){
+ return (h.critical&&fCritical.checked)||(h.disaster&&fDisaster.checked)||(h.secondary&&fSecondary.checked);
+}
+function catText(h){
+ let x=[]; if(h.critical)x.push("救命救急"); if(h.disaster)x.push("災害拠点"); if(h.secondary)x.push("二次救急"); return x.join(" / ");
+}
+function drawHospitals(){
+ hospitalLayers.forEach(x=>map.removeLayer(x));hospitalLayers.clear();
+ hospitals.forEach((h,i)=>{
+   if(!visible(h))return;
+   const m=L.circleMarker([h.lat,h.lng],{radius:h.critical?8:6,color:"#fff",weight:1,fillColor:iconColor(h),fillOpacity:.95})
+     .addTo(map).bindPopup(`<b>${h.name}</b><br>${catText(h)}<br>${h.area}`);
+   hospitalLayers.set(i,m);
+ });
+}
+drawHospitals();
+
+function setIncident(lat,lng){
+ incident={lat,lng};
+ if(incidentMarker)map.removeLayer(incidentMarker);
+ incidentMarker=L.marker([lat,lng],{draggable:true}).addTo(map).bindPopup("発災地点").openPopup();
+ incidentMarker.on('dragend',e=>{const p=e.target.getLatLng();setIncident(p.lat,p.lng);});
+ incidentText.textContent=`緯度 ${lat.toFixed(5)} / 経度 ${lng.toFixed(5)}`;
+ renderResults();
+}
+map.on('click',e=>setIncident(e.latlng.lat,e.latlng.lng));
+map.on('contextmenu',e=>setIncident(e.latlng.lat,e.latlng.lng));
+
+async function searchAddress(){
+ const q=document.getElementById("addressInput").value.trim();
+ const box=document.getElementById("searchCandidates");
+ if(!q){alert("住所、病院名、店舗名、施設名などを入力してください。");return}
+ const btn=document.getElementById("addressBtn");
+ status.textContent="地点を検索中…"; btn.disabled=true;
+ box.style.display="none"; box.innerHTML="";
+ try{
+   // 福島県内を優先。ただし検索語に福島県が無い場合でも、県内候補を上位表示。
+   const url=`https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&namedetails=1&limit=10&countrycodes=jp&q=${encodeURIComponent(q)}`;
+   const r=await fetch(url,{headers:{"Accept-Language":"ja"}});
+   if(!r.ok)throw new Error();
+   const j=await r.json();
+   if(!j.length){
+     status.textContent="該当地点が見つかりません。名称や住所を少し変えて再検索してください。";
+     return;
+   }
+
+   const ranked=[...j].sort((a,b)=>{
+     const af=(a.display_name||"").includes("福島県")?0:1;
+     const bf=(b.display_name||"").includes("福島県")?0:1;
+     return af-bf;
+   }).slice(0,8);
+
+   box.innerHTML=ranked.map((x,i)=>{
+     const title=(x.namedetails?.name || x.name || (x.display_name||"").split(",")[0] || "候補");
+     const type=[x.type,x.class].filter(Boolean).join(" / ");
+     return `<div class="candidate" data-candidate="${i}">
+       <div class="ctitle">${title}</div>
+       <div class="cmeta">${x.display_name||""}</div>
+       <div class="cmeta">${type}</div>
+     </div>`;
+   }).join("");
+   box.style.display="block";
+   status.textContent=`${ranked.length}件の候補が見つかりました。発災地点にする場所を選択してください。`;
+
+   box.querySelectorAll(".candidate").forEach(el=>{
+     el.onclick=()=>{
+       const hit=ranked[Number(el.dataset.candidate)];
+       const lat=Number(hit.lat),lng=Number(hit.lon);
+       const title=(hit.namedetails?.name || hit.name || (hit.display_name||"").split(",")[0] || q);
+       setIncident(lat,lng);
+       map.setView([lat,lng],14);
+       incidentText.innerHTML=`<b>${title}</b><br>${hit.display_name||""}<br>緯度 ${lat.toFixed(5)} / 経度 ${lng.toFixed(5)}`;
+       document.getElementById("addressInput").value=title;
+       box.style.display="none";
+       status.textContent="検索結果から発災地点を設定しました。「陸路・空路を計算」を押してください。";
+     };
+   });
+ }catch(e){
+   status.textContent="地点検索に失敗しました。インターネット接続を確認するか、地図上で地点を指定してください。";
+ }finally{btn.disabled=false}
+}
+document.getElementById("addressBtn").onclick=searchAddress;
+document.getElementById("addressInput").addEventListener("keydown",e=>{if(e.key==="Enter")searchAddress()});
+
+
+geoBtn.onclick=()=>navigator.geolocation?.getCurrentPosition(p=>{setIncident(p.coords.latitude,p.coords.longitude);map.setView([p.coords.latitude,p.coords.longitude],12)},()=>alert("現在地を取得できませんでした。"));
+clearBtn.onclick=()=>{incident=null;if(incidentMarker)map.removeLayer(incidentMarker);incidentMarker=null;incidentText.textContent="未設定";results.innerHTML="";status.textContent="";if(routeLayer)map.removeLayer(routeLayer)};
+[fCritical,fDisaster,fSecondary].forEach(x=>x.onchange=()=>{drawHospitals();renderResults();});
+[airSpeed,airOverhead].forEach(x=>x.oninput=renderResults);
+sortMode.onchange=renderResults;
+if(window.routeDirection)routeDirection.onchange=()=>{roadTimes={};roadDistances={};renderResults();status.textContent="方向を変更しました。陸路を再計算してください。";};
+
+function hav(a,b){
+ const R=6371,toRad=x=>x*Math.PI/180;
+ const dLat=toRad(b.lat-a.lat),dLon=toRad(b.lng-a.lng);
+ const s=Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2;
+ return 2*R*Math.asin(Math.sqrt(s));
+}
+let roadTimes={}, roadDistances={};
+function airMinutes(km){return km/(Number(airSpeed.value)||220)*60+(Number(airOverhead.value)||0)}
+
+function renderResults(){
+ if(!incident){results.innerHTML="";return}
+ let arr=hospitals.map((h,i)=>({h,i,dist:hav(incident,h),road:roadTimes[i],air:airMinutes(hav(incident,h))})).filter(x=>visible(x.h));
+ const mode=sortMode.value;
+ arr.sort((a,b)=>{
+   if(mode==="road")return (a.road??1e9)-(b.road??1e9);
+   if(mode==="air")return a.air-b.air; return a.dist-b.dist;
+ });
+ results.innerHTML=arr.map(x=>`
+ <div class="hospital" data-i="${x.i}">
+   <div class="name">${x.h.name}</div>
+   <div class="meta">${catText(x.h)} ・ ${x.h.area} ・ 直線 ${x.dist.toFixed(1)} km</div>
+   <div class="times">
+    <span class="pill road">陸路 ${x.road!=null?Math.round(x.road)+"分"+(roadDistances[x.i]!=null?" / "+roadDistances[x.i].toFixed(1)+"km":""):"未計算"}</span>
+    <span class="pill air">空路 約${Math.round(x.air)}分</span>
+   </div>
+ </div>`).join("");
+ document.querySelectorAll(".hospital").forEach(el=>el.onclick=()=>showRoute(Number(el.dataset.i)));
+}
+
+async function fetchRouteTime(target){
+ const h=target.h;
+ const dir=(routeDirection?.value||"incidentToHospital");
+ let c1,c2;
+ if(dir==="hospitalToIncident"){
+   c1=`${h.lng},${h.lat}`; c2=`${incident.lng},${incident.lat}`;
+ }else{
+   c1=`${incident.lng},${incident.lat}`; c2=`${h.lng},${h.lat}`;
+ }
+ const url=`https://router.project-osrm.org/route/v1/driving/${c1};${c2}?overview=false&steps=false`;
+ const r=await fetch(url);
+ if(!r.ok)throw new Error("routing");
+ const j=await r.json();
+ const route=j.routes?.[0];
+ if(!route)throw new Error("no route");
+ return {minutes:route.duration/60, km:route.distance/1000};
+}
+
+async function calcRoad(){
+ if(!incident){alert("先に発災地点を地図上で指定してください。");return}
+ status.textContent="陸路時間を道路ネットワークから計算中…";
+ roadTimes={}; roadDistances={};
+
+ let targets=hospitals.map((h,i)=>({h,i,dist:hav(incident,h)})).filter(x=>visible(x.h));
+ targets.sort((a,b)=>a.dist-b.dist);
+ const lim=roadLimit?.value||"all";
+ if(lim!=="all")targets=targets.slice(0,Number(lim));
+
+ let done=0,failed=0;
+ const concurrency=4;
+ for(let s=0;s<targets.length;s+=concurrency){
+   const batch=targets.slice(s,s+concurrency);
+   await Promise.all(batch.map(async x=>{
+     try{
+       const rr=await fetchRouteTime(x);
+       roadTimes[x.i]=rr.minutes;
+       roadDistances[x.i]=rr.km;
+       done++;
+     }catch(e){failed++}
+   }));
+   status.textContent=`陸路計算中… ${Math.min(s+concurrency,targets.length)}/${targets.length}`;
+   renderResults();
+ }
+ status.textContent=failed
+   ? `${done}施設の陸路を計算しました（${failed}施設は取得失敗）。病院をクリックすると個別ルートを再取得できます。`
+   : `${done}施設の陸路距離・所要時間を計算しました。`;
+ renderResults();
+}
+calcBtn.onclick=calcRoad;
+
+async function showRoute(i){
+ if(!incident)return;
+ const h=hospitals[i];
+ if(routeLayer)map.removeLayer(routeLayer);
+ const dir=(routeDirection?.value||"incidentToHospital");
+ const from = dir==="hospitalToIncident" ? `${h.lng},${h.lat}` : `${incident.lng},${incident.lat}`;
+ const to   = dir==="hospitalToIncident" ? `${incident.lng},${incident.lat}` : `${h.lng},${h.lat}`;
+ const arrow= dir==="hospitalToIncident" ? `${h.name} → 現場` : `現場 → ${h.name}`;
+ status.textContent=`${arrow} の陸路を取得中…`;
+ try{
+   const url=`https://router.project-osrm.org/route/v1/driving/${from};${to}?overview=full&geometries=geojson`;
+   const r=await fetch(url); const j=await r.json();
+   const geo=j.routes?.[0]?.geometry; if(!geo)throw 0;
+   routeLayer=L.geoJSON(geo,{style:{weight:5,opacity:.75}}).addTo(map);
+   map.fitBounds(routeLayer.getBounds(),{padding:[30,30]});
+   const min=j.routes[0].duration/60,km=j.routes[0].distance/1000;
+   roadTimes[i]=min; roadDistances[i]=km; renderResults();
+   status.textContent=`${arrow}: 陸路 約${Math.round(min)}分 / ${km.toFixed(1)} km`;
+ }catch(e){status.textContent="ルート取得に失敗しました。道路データまたは公開ルーティングサービスの状態をご確認ください。"}
+}
+renderResults();
+</script>
+</body>
+</html>
