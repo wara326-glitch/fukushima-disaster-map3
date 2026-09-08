@@ -10,6 +10,7 @@
       "都道府県コード"
     ],
     "emergency_headers": [],
+    "phone_headers": [],
     "pref_samples": [
       "01",
       "02",
@@ -112,6 +113,7 @@
       "都道府県コード"
     ],
     "emergency_headers": [],
+    "phone_headers": [],
     "pref_samples": [
       "01",
       "02",
