@@ -226,11 +226,26 @@ def merge_clinic_specialties(clinics,specmap):
     for h in clinics:
         sid=(h.get("source_id") or "").strip()
         specs=specmap.get(sid)
-        if specs:
-            h["specialties"]=list(specs)
+        name=h.get("name","")
+        fallback_map=[
+            ("内科",["内科"]),
+            ("外科",["外科"]),
+            ("小児科",["小児科"]),
+            ("整形外科",["整形外科"]),
+            ("産婦人科",["産婦人科","産科","婦人科"]),
+            ("眼科",["眼科"]),
+            ("耳鼻科",["耳鼻咽喉科","耳鼻いんこう科","耳鼻科"]),
+            ("精神科",["精神科","心療内科"]),
+            ("皮膚科",["皮膚科"]),
+            ("泌尿器科",["泌尿器科"]),
+        ]
+        merged=set(specs or [])
+        for label,terms in fallback_map:
+            if any(t in name for t in terms):
+                merged.add(label)
+        h["specialties"]=sorted(merged)
+        if h["specialties"]:
             matched+=1
-        else:
-            h["specialties"]=[]
     return {"matched_clinics":matched,"unmatched_clinics":len(clinics)-matched}
 
 
