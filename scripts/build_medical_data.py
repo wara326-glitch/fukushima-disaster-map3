@@ -17,6 +17,7 @@ CRITICAL = [
     "福島県立医科大学附属病院",
 ]
 HOSPITAL_PHONE_OVERRIDES = {
+    # Verified against official hospital/municipal websites or Fukushima Prefecture list.
     "公立小野町地方綜合病院":"0247-72-3181",
     "医療法人社団青秀会　車田病院":"0247-43-1019",
     "医療法人社団養高会　高野病院":"0240-27-2901",
