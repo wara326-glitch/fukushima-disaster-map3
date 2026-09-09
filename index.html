@@ -133,7 +133,7 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 
 <div class="card small" style="margin-top:10px">
 <b>データについて</b><br>
-施設名・所在地・緯度経度は厚生労働省「医療情報ネット」オープンデータ（2026年6月1日時点）を使用しています。救急車受入件数は厚生労働省「令和7年度 病床機能報告」施設票の令和6年度実績を使用しています。救命センター・災害拠点病院は公的指定情報をもとに分類しています。実災害時の受入可否、診療機能、通行止め等は別途確認してください。
+施設名・所在地・緯度経度は厚生労働省「医療情報ネット」オープンデータ（2026年6月1日時点）を使用しています。救急車受入件数は厚生労働省「令和7年度 病床機能報告」施設票の令和6年度実績を使用しています。救命センター・災害拠点病院は公的指定情報をもとに分類しています。電話番号を含め、元データで確認できない項目は推測で補完していません。実災害時の受入可否、診療機能、通行止め等は別途確認してください。
 </div>
 </aside>
 <div id="map"></div>
@@ -173,12 +173,20 @@ function belongsToCategory(h,cat){
  if(cat==="clinic")return h.type==="clinic"||h.clinic===true;
  if(cat.startsWith("clinic-")){
    if(!(h.type==="clinic"||h.clinic===true))return false;
-   const spec={
-     "clinic-internal":"内科","clinic-surgery":"外科","clinic-pediatrics":"小児科",
-     "clinic-orthopedics":"整形外科","clinic-obgyn":"産婦人科","clinic-ophthalmology":"眼科",
-     "clinic-ent":"耳鼻科","clinic-psychiatry":"精神科","clinic-dermatology":"皮膚科","clinic-urology":"泌尿器科"
-   }[cat];
-   return (h.specialties||[]).includes(spec);
+   const aliases={
+     "clinic-internal":["内科"],
+     "clinic-surgery":["外科"],
+     "clinic-pediatrics":["小児科"],
+     "clinic-orthopedics":["整形外科"],
+     "clinic-obgyn":["産婦人科","産科","婦人科"],
+     "clinic-ophthalmology":["眼科"],
+     "clinic-ent":["耳鼻科","耳鼻咽喉科"],
+     "clinic-psychiatry":["精神科","神経精神科"],
+     "clinic-dermatology":["皮膚科","皮フ科"],
+     "clinic-urology":["泌尿器科"]
+   }[cat]||[];
+   const specs=(h.specialties||[]).map(x=>String(x).replace(/\s/g,""));
+   return aliases.some(a=>specs.some(s=>s===a||s.includes(a)));
  }
  if(h.type==="clinic"||h.clinic===true)return false;
  if(cat==="critical")return !!h.critical;
