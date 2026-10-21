@@ -415,7 +415,7 @@ function exportRows(){
   "直線距離(km)":Number(x.dist.toFixed(1)),
   "陸路時間(分)":x.road==null?"":Math.round(x.road),
   "陸路距離(km)":roadDistances[x.i]==null?"":Number(roadDistances[x.i].toFixed(1)),
-  "陸路所要時間":x.road!=null?Math.round(x.road)+"分":roadFailed.has(x.i)?"取得失敗":roadAttempted.has(x.i)?"計算中":"未取得",
+  "陸路所要時間":x.road!=null?Math.round(x.road)+"分":roadFailed.has(x.i)?"取得失敗":roadAttempted.has(x.i)?"未取得":"未取得",
   "空路推定(分)":Math.round(x.air)
  }));
 }
