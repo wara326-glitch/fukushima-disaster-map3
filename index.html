@@ -85,7 +85,7 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 <div><label>巡航速度 km/h</label><input id="airSpeed" type="number" value="220" min="80" max="350"></div>
 <div><label>固定加算 分</label><input id="airOverhead" type="number" value="5" min="0" max="60"></div>
 </div>
-<div class="small" style="margin-top:7px">空路は病院―現場の直線距離から算出。実際の飛行可否・離着陸場・天候・管制・立上げ時間は別途判断。</div>
+<div class="small" style="margin-top:7px">空路はヘリポートから病院への陸路搬送を含めて評価します。着陸場所の位置・使用可否が未確認の場合は合計時間を算出しません。</div>
 </div>
 
 <div class="card">
@@ -93,7 +93,7 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 <button id="calcBtn">陸路・空路を計算</button>
 <select id="sortMode">
 <option value="road">陸路時間順</option>
-<option value="air">空路時間順</option>
+<option value="air">空路時間順（確認済みのみ）</option>
 <option value="distance">直線距離順</option>
 </select>
 </div>
@@ -383,13 +383,15 @@ function hav(a,b){
 let roadTimes={}, roadDistances={}, roadAttempted=new Set(), roadFailed=new Set();
 function airMinutes(km){return km/(Number(airSpeed.value)||220)*60+(Number(airOverhead.value)||0)}
 
+function airAccess(h){return h.helipad_access||null}
+function airDisplay(x){const a=airAccess(x.h);return a&&Number.isFinite(Number(a.total_minutes))&&a.verified===true?`約${Math.round(Number(a.total_minutes))}分（着陸後陸路含む）`:"着陸場所・搬送経路未確認"}
 function getDisplayedFacilities(){
  if(!incident)return []
  let arr=hospitals.map((h,i)=>({h,i,dist:hav(incident,h),road:roadTimes[i],air:airMinutes(hav(incident,h))})).filter(x=>visible(x.h));
  const mode=sortMode.value;
  arr.sort((a,b)=>{
    if(mode==="road")return (a.road??1e9)-(b.road??1e9);
-   if(mode==="air")return a.air-b.air; return a.dist-b.dist;
+   if(mode==="air")return (airAccess(a.h)?.verified===true?Number(airAccess(a.h).total_minutes):1e9)-(airAccess(b.h)?.verified===true?Number(airAccess(b.h).total_minutes):1e9); return a.dist-b.dist;
  });
  return arr;
 }
@@ -402,7 +404,7 @@ function renderResults(){
    <div class="meta">${catText(x.h)} ・ ${x.h.address||""}${x.h.phone?" ・ ☎ "+x.h.phone:""} ・ 直線 ${x.dist.toFixed(1)} km</div>
    <div class="times">
     <span class="pill road">陸路 ${x.road!=null?Math.round(x.road)+"分"+(roadDistances[x.i]!=null?" / "+roadDistances[x.i].toFixed(1)+"km":""):roadFailed.has(x.i)?"取得失敗":roadAttempted.has(x.i)?"計算中":"計算対象外（未取得）"}</span>
-    <span class="pill air">空路 約${Math.round(x.air)}分</span>
+    <span class="pill air">空路 ${airDisplay(x)}</span>
    </div>
  </div>`).join("");
  document.querySelectorAll(".hospital").forEach(el=>el.onclick=()=>showRoute(Number(el.dataset.i)));
@@ -416,7 +418,9 @@ function exportRows(){
   "陸路時間(分)":x.road==null?"":Math.round(x.road),
   "陸路距離(km)":roadDistances[x.i]==null?"":Number(roadDistances[x.i].toFixed(1)),
   "陸路所要時間":x.road!=null?Math.round(x.road)+"分":roadFailed.has(x.i)?"取得失敗":roadAttempted.has(x.i)?"未取得":"未取得",
-  "空路推定(分)":Math.round(x.air)
+  "空路合計時間(分)":airAccess(x.h)?.verified===true&&Number.isFinite(Number(airAccess(x.h)?.total_minutes))?Math.round(Number(airAccess(x.h).total_minutes)):"未確認",
+  "着陸場所":airAccess(x.h)?.landing_site||"未確認",
+  "着陸後陸路(分)":airAccess(x.h)?.verified===true?airAccess(x.h)?.ground_minutes??"未確認":"未確認"
  }));
 }
 function escapeCell(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
