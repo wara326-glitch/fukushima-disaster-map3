@@ -129,6 +129,7 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 </div>
 
 <div id="status" class="small" style="margin:6px 2px"></div>
+<div class="row" style="margin:8px 0"><button class="secondary" id="excelBtn">表示リストをExcel保存</button><button class="secondary" id="printBtn">表示リストを印刷</button></div>
 <div id="results"></div>
 
 <div class="card small" style="margin-top:10px">
@@ -140,6 +141,7 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 // 実証用スターターセット。
 // 正式運用では県公式マスタ（CSV/GeoJSON/API）へ差替え推奨。
@@ -381,14 +383,19 @@ function hav(a,b){
 let roadTimes={}, roadDistances={}, roadAttempted=new Set(), roadFailed=new Set();
 function airMinutes(km){return km/(Number(airSpeed.value)||220)*60+(Number(airOverhead.value)||0)}
 
-function renderResults(){
- if(!incident){results.innerHTML="";return}
+function getDisplayedFacilities(){
+ if(!incident)return []
  let arr=hospitals.map((h,i)=>({h,i,dist:hav(incident,h),road:roadTimes[i],air:airMinutes(hav(incident,h))})).filter(x=>visible(x.h));
  const mode=sortMode.value;
  arr.sort((a,b)=>{
    if(mode==="road")return (a.road??1e9)-(b.road??1e9);
    if(mode==="air")return a.air-b.air; return a.dist-b.dist;
  });
+ return arr;
+}
+function renderResults(){
+ if(!incident){results.innerHTML="";return}
+ const arr=getDisplayedFacilities();
  results.innerHTML=arr.map(x=>`
  <div class="hospital" data-i="${x.i}">
    <div class="name">${categoryDots(x.h)}${displayName(x.h.name)}</div>
@@ -400,6 +407,37 @@ function renderResults(){
  </div>`).join("");
  document.querySelectorAll(".hospital").forEach(el=>el.onclick=()=>showRoute(Number(el.dataset.i)));
 }
+
+function exportRows(){
+ return getDisplayedFacilities().map((x,n)=>({
+  "番号":n+1,"医療機関名":displayName(x.h.name),"区分":catText(x.h),
+  "所在地":x.h.address||"","電話番号":x.h.phone||"",
+  "直線距離(km)":Number(x.dist.toFixed(1)),
+  "陸路時間(分)":x.road==null?"":Math.round(x.road),
+  "陸路距離(km)":roadDistances[x.i]==null?"":Number(roadDistances[x.i].toFixed(1)),
+  "陸路計算状況":x.road!=null?"計算済":roadFailed.has(x.i)?"取得失敗":roadAttempted.has(x.i)?"計算中":"対象外・未取得",
+  "空路推定(分)":Math.round(x.air)
+ }));
+}
+function escapeCell(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+document.getElementById("excelBtn").onclick=()=>{
+ if(!incident){alert("発災地点を設定してください。");return}
+ const rows=exportRows();if(!rows.length){alert("表示中の施設がありません。");return}
+ if(typeof XLSX==="undefined"){alert("Excel出力ライブラリを読み込めませんでした。通信環境を確認してください。");return}
+ const sheet=XLSX.utils.json_to_sheet(rows);
+ sheet["!cols"]=[{wch:7},{wch:36},{wch:45},{wch:44},{wch:19},{wch:16},{wch:16},{wch:16},{wch:20},{wch:16}];
+ const book=XLSX.utils.book_new();XLSX.utils.book_append_sheet(book,sheet,"医療機関一覧");
+ XLSX.writeFile(book,"福島県医療機関一覧_"+new Date().toISOString().slice(0,10)+".xlsx");
+};
+document.getElementById("printBtn").onclick=()=>{
+ if(!incident){alert("発災地点を設定してください。");return}
+ const rows=exportRows();if(!rows.length){alert("表示中の施設がありません。");return}
+ const keys=Object.keys(rows[0]);
+ const w=window.open("","_blank");if(!w){alert("印刷用ウィンドウがブロックされました。");return}
+ const table="<table><thead><tr>"+keys.map(k=>"<th>"+escapeCell(k)+"</th>").join("")+"</tr></thead><tbody>"+rows.map(r=>"<tr>"+keys.map(k=>"<td>"+escapeCell(r[k])+"</td>").join("")+"</tr>").join("")+"</tbody></table>";
+ w.document.write('<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>福島県医療機関一覧</title><style>@page{size:A4 landscape;margin:10mm}body{font-family:sans-serif;color:#111}h2{font-size:16px}p{font-size:10px}table{width:100%;border-collapse:collapse;font-size:9px}th,td{border:1px solid #999;padding:4px;overflow-wrap:anywhere}th{background:#eee}thead{display:table-header-group}tr{break-inside:avoid}</style></head><body><h2>福島県 医療機関一覧</h2><p>発災地点：'+escapeCell(incidentText.textContent)+' ／ 表示施設数：'+rows.length+' ／ 陸路未取得は実際の所要時間を示しません。</p>'+table+'</body></html>');
+ w.document.close();w.focus();setTimeout(()=>w.print(),400);
+};
 
 async function fetchRouteTime(target){
  const h=target.h;
