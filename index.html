@@ -114,7 +114,7 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 </select>
 </div>
 </div>
-<div class="small" style="margin-top:7px">陸路は公開OSRMルーティングサービスを利用するため、インターネット接続が必要です。</div>
+<div class="small" style="margin-top:7px">陸路は公開OSRMルーティングサービスを利用します。初期設定では近い10施設のみ計算し、その他は「計算対象外（未取得）」と表示します。全施設を計算する場合は対象を変更してください。公開サービスの混雑時は取得失敗することがあります。</div>
 </div>
 
 <div class="card">
@@ -293,7 +293,7 @@ document.querySelectorAll("#categoryTabs .tab").forEach(btn=>{
    });
 
    if(routeLayer){map.removeLayer(routeLayer);routeLayer=null}
-   roadTimes={};roadDistances={};
+   roadTimes={};roadDistances={};roadAttempted.clear();roadFailed.clear();
    drawHospitals();renderResults();
  };
 });
@@ -378,7 +378,7 @@ function hav(a,b){
  const s=Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLon/2)**2;
  return 2*R*Math.asin(Math.sqrt(s));
 }
-let roadTimes={}, roadDistances={};
+let roadTimes={}, roadDistances={}, roadAttempted=new Set(), roadFailed=new Set();
 function airMinutes(km){return km/(Number(airSpeed.value)||220)*60+(Number(airOverhead.value)||0)}
 
 function renderResults(){
@@ -394,7 +394,7 @@ function renderResults(){
    <div class="name">${categoryDots(x.h)}${displayName(x.h.name)}</div>
    <div class="meta">${catText(x.h)} ・ ${x.h.address||""}${x.h.phone?" ・ ☎ "+x.h.phone:""} ・ 直線 ${x.dist.toFixed(1)} km</div>
    <div class="times">
-    <span class="pill road">陸路 ${x.road!=null?Math.round(x.road)+"分"+(roadDistances[x.i]!=null?" / "+roadDistances[x.i].toFixed(1)+"km":""):"未計算"}</span>
+    <span class="pill road">陸路 ${x.road!=null?Math.round(x.road)+"分"+(roadDistances[x.i]!=null?" / "+roadDistances[x.i].toFixed(1)+"km":""):roadFailed.has(x.i)?"取得失敗":roadAttempted.has(x.i)?"計算中":"計算対象外（未取得）"}</span>
     <span class="pill air">空路 約${Math.round(x.air)}分</span>
    </div>
  </div>`).join("");
@@ -422,13 +422,14 @@ async function fetchRouteTime(target){
 async function calcRoad(){
  if(!incident){alert("先に発災地点を地図上で指定してください。");return}
  status.textContent="陸路時間を道路ネットワークから計算中…";
- roadTimes={}; roadDistances={};
+ roadTimes={}; roadDistances={};roadAttempted.clear();roadFailed.clear();
 
  let targets=hospitals.map((h,i)=>({h,i,dist:hav(incident,h)})).filter(x=>visible(x.h));
  targets.sort((a,b)=>a.dist-b.dist);
  const lim=roadLimit?.value||"all";
  if(lim!=="all")targets=targets.slice(0,Number(lim));
 
+ targets.forEach(x=>roadAttempted.add(x.i));
  let done=0,failed=0;
  const concurrency=4;
  for(let s=0;s<targets.length;s+=concurrency){
@@ -439,13 +440,13 @@ async function calcRoad(){
        roadTimes[x.i]=rr.minutes;
        roadDistances[x.i]=rr.km;
        done++;
-     }catch(e){failed++}
+     }catch(e){failed++;roadFailed.add(x.i);console.warn("陸路取得失敗",x.h.name,e)}
    }));
    status.textContent=`陸路計算中… ${Math.min(s+concurrency,targets.length)}/${targets.length}`;
    renderResults();
  }
  status.textContent=failed
-   ? `${done}施設の陸路を計算しました（${failed}施設は取得失敗）。病院をクリックすると個別ルートを再取得できます。`
+   ? `${done}施設の陸路を計算しました（${failed}施設は取得失敗）。施設をクリックすると個別ルートを再取得できます。`
    : `${done}施設の陸路距離・所要時間を計算しました。`;
  renderResults();
 }
@@ -467,7 +468,7 @@ async function showRoute(i){
    routeLayer=L.geoJSON(geo,{style:{weight:5,opacity:.75}}).addTo(map);
    map.fitBounds(routeLayer.getBounds(),{padding:[30,30]});
    const min=j.routes[0].duration/60,km=j.routes[0].distance/1000;
-   roadTimes[i]=min; roadDistances[i]=km; renderResults();
+   roadTimes[i]=min; roadDistances[i]=km;roadAttempted.add(i);roadFailed.delete(i); renderResults();
    status.textContent=`${arrow}: 陸路 約${Math.round(min)}分 / ${km.toFixed(1)} km`;
  }catch(e){status.textContent="ルート取得に失敗しました。道路データまたは公開ルーティングサービスの状態をご確認ください。"}
 }
