@@ -108,13 +108,13 @@ button.secondary{background:#1f2937;border-color:#4b5563}.row{display:flex;gap:8
 <div>
 <label>陸路計算対象</label>
 <select id="roadLimit">
-<option value="10" selected>近い10施設</option>
+<option value="10">近い10施設</option>
 <option value="5">近い5施設</option>
-<option value="all">表示中の全施設（多数の場合注意）</option>
+<option value="all" selected>表示中の全施設（多数の場合注意）</option>
 </select>
 </div>
 </div>
-<div class="small" style="margin-top:7px">陸路は公開OSRMルーティングサービスを利用します。初期設定では近い10施設のみ計算し、その他は「計算対象外（未取得）」と表示します。全施設を計算する場合は対象を変更してください。公開サービスの混雑時は取得失敗することがあります。</div>
+<div class="small" style="margin-top:7px">陸路は公開OSRMルーティングサービスを利用します。初期設定では表示中の全施設を計算します。施設数が多い場合は時間がかかり、公開サービスの利用制限により一部取得できないことがあります。全施設を計算する場合は対象を変更してください。公開サービスの混雑時は取得失敗することがあります。</div>
 </div>
 
 <div class="card">
